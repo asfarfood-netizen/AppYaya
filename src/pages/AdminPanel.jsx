@@ -6,6 +6,8 @@ import { ROLE_LABELS } from '../constants'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../supabaseClient'
+
 export default function AdminPanel() {
   const { profile } = useAuth()
   const [users, setUsers]     = useState([])
@@ -18,6 +20,8 @@ export default function AdminPanel() {
   const [success, setSuccess] = useState(null)
 
   const fetchUsers = useCallback(async () => {
+    // Left join auth.users to get email? Supabase doesn't allow joining auth.users easily without RPC.
+    // We'll just list profiles.
     const { data } = await supabase
       .from('profiles')
       .select('*')
@@ -32,38 +36,37 @@ export default function AdminPanel() {
     e.preventDefault()
     setSaving(true); setError(null); setSuccess(null)
     try {
-      // Use signUp then immediately update profile role
-      // Note: In production, use service role key for admin.createUser
-      const { data, error: signUpErr } = await supabase.auth.admin.createUser({
+      // Pour créer un compte sans déconnecter l'admin actuel,
+      // nous utilisons une instance temporaire de Supabase
+      const { createClient } = await import('@supabase/supabase-js')
+      const tempClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false
+        }
+      })
+
+      const { data: { user }, error: suErr } = await tempClient.auth.signUp({
         email: form.email,
         password: form.password,
-        email_confirm: true,
-        user_metadata: { full_name: form.full_name, role: form.role }
+        options: { data: { full_name: form.full_name, role: form.role } }
       })
-      if (signUpErr) throw signUpErr
+
+      if (suErr) throw suErr
+      
+      if (user) {
+        // Le trigger handle_new_user va créer le profil automatiquement.
+        // On s'assure juste de forcer la mise à jour au cas où.
+        await supabase.from('profiles').upsert({ id: user.id, full_name: form.full_name, role: form.role })
+      }
+
       setSuccess(`Compte créé pour ${form.full_name}`)
       setShowNew(false)
       setForm({ email: '', password: '', full_name: '', role: 'reception' })
       setTimeout(fetchUsers, 1000)
     } catch (e) {
-      // Fallback: insert directly
-      try {
-        const { data: { user }, error: suErr } = await supabase.auth.signUp({
-          email: form.email,
-          password: form.password,
-          options: { data: { full_name: form.full_name, role: form.role } }
-        })
-        if (suErr) throw suErr
-        if (user) {
-          await supabase.from('profiles').upsert({ id: user.id, full_name: form.full_name, role: form.role })
-        }
-        setSuccess(`Compte créé — confirmation email envoyée à ${form.email}`)
-        setShowNew(false)
-        setForm({ email: '', password: '', full_name: '', role: 'reception' })
-        setTimeout(fetchUsers, 1000)
-      } catch (e2) {
-        setError(e2.message)
-      }
+      setError(e.message)
     } finally {
       setSaving(false)
     }

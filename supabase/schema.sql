@@ -2,10 +2,8 @@
 -- SCHÉMA HÔTEL YAHIA — Supabase PostgreSQL
 -- Exécuter dans l'éditeur SQL de Supabase (SQL Editor)
 -- ============================================================
-
 -- Extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
 -- ============================================================
 -- TABLE: profiles (extension de auth.users)
 -- ============================================================
@@ -18,9 +16,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-
 -- Trigger: auto-create profile on user signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
@@ -30,21 +26,17 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-
 -- Trigger: updated_at auto
 CREATE OR REPLACE FUNCTION update_updated_at()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
 $$;
-
 CREATE TRIGGER profiles_updated_at BEFORE UPDATE ON public.profiles
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
 -- ============================================================
 -- TABLE: rooms
 -- ============================================================
@@ -59,12 +51,9 @@ CREATE TABLE IF NOT EXISTS public.rooms (
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_by   UUID REFERENCES public.profiles(id) ON DELETE SET NULL
 );
-
 ALTER TABLE public.rooms ENABLE ROW LEVEL SECURITY;
-
 CREATE TRIGGER rooms_updated_at BEFORE UPDATE ON public.rooms
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
 -- ============================================================
 -- TABLE: tasks
 -- ============================================================
@@ -82,12 +71,9 @@ CREATE TABLE IF NOT EXISTS public.tasks (
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   completed_at TIMESTAMPTZ
 );
-
 ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
-
 CREATE TRIGGER tasks_updated_at BEFORE UPDATE ON public.tasks
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
 -- ============================================================
 -- TABLE: logs
 -- ============================================================
@@ -101,9 +87,7 @@ CREATE TABLE IF NOT EXISTS public.logs (
   new_value   JSONB,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
 ALTER TABLE public.logs ENABLE ROW LEVEL SECURITY;
-
 -- ============================================================
 -- FUNCTION: log action (appelée par triggers/app)
 -- ============================================================
@@ -124,54 +108,38 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 CREATE TRIGGER rooms_log_change AFTER UPDATE ON public.rooms
   FOR EACH ROW EXECUTE FUNCTION public.log_room_change();
-
 -- ============================================================
 -- RLS POLICIES — profiles
 -- ============================================================
-
--- Tout le monde peut lire son propre profil
-CREATE POLICY "profiles_select_own" ON public.profiles
-  FOR SELECT USING (auth.uid() = id);
-
--- Admin voit tous les profils
-CREATE POLICY "profiles_select_admin" ON public.profiles
-  FOR SELECT USING (
-    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
-  );
-
+-- Tout utilisateur authentifié peut voir les profils (nécessaire pour assigner les tâches)
+CREATE POLICY "profiles_select_all" ON public.profiles
+  FOR SELECT USING (auth.role() = 'authenticated');
 -- Admin peut modifier tous les profils
 CREATE POLICY "profiles_update_admin" ON public.profiles
   FOR UPDATE USING (
     EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
   );
-
 -- Admin peut insérer des profils
 CREATE POLICY "profiles_insert_admin" ON public.profiles
   FOR INSERT WITH CHECK (
     EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
   );
-
 -- Chacun peut modifier son propre profil (nom, avatar)
 CREATE POLICY "profiles_update_own" ON public.profiles
   FOR UPDATE USING (auth.uid() = id);
-
 -- ============================================================
 -- RLS POLICIES — rooms
 -- ============================================================
-
 -- Tout utilisateur authentifié peut LIRE les chambres
 CREATE POLICY "rooms_select_all" ON public.rooms
   FOR SELECT USING (auth.role() = 'authenticated');
-
 -- Admin: accès complet
 CREATE POLICY "rooms_update_admin" ON public.rooms
   FOR UPDATE USING (
     EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
   );
-
 -- Réception: peut passer en 'occupe', 'non_nettoyee', 'special', 'libre'
 CREATE POLICY "rooms_update_reception" ON public.rooms
   FOR UPDATE USING (
@@ -181,7 +149,6 @@ CREATE POLICY "rooms_update_reception" ON public.rooms
   WITH CHECK (
     status IN ('occupe','non_nettoyee','special','libre')
   );
-
 -- Gouvernante: peut passer en 'en_preparation' ou 'libre'
 CREATE POLICY "rooms_update_gouvernante" ON public.rooms
   FOR UPDATE USING (
@@ -191,7 +158,6 @@ CREATE POLICY "rooms_update_gouvernante" ON public.rooms
   WITH CHECK (
     status IN ('en_preparation','libre')
   );
-
 -- Entretien: peut passer en 'bloquee' ou 'libre'
 CREATE POLICY "rooms_update_entretien" ON public.rooms
   FOR UPDATE USING (
@@ -201,69 +167,56 @@ CREATE POLICY "rooms_update_entretien" ON public.rooms
   WITH CHECK (
     status IN ('bloquee','libre')
   );
-
 -- ============================================================
 -- RLS POLICIES — tasks
 -- ============================================================
-
 -- Lecture: Admin voit tout, autres voient leurs tâches assignées
 CREATE POLICY "tasks_select_admin" ON public.tasks
   FOR SELECT USING (
     EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
   );
-
 CREATE POLICY "tasks_select_reception" ON public.tasks
   FOR SELECT USING (
     EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'reception')
     AND (assigned_to = auth.uid() OR created_by = auth.uid() OR task_type = 'reception')
   );
-
 CREATE POLICY "tasks_select_gouvernante" ON public.tasks
   FOR SELECT USING (
     EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'gouvernante')
     AND (assigned_to = auth.uid() OR created_by = auth.uid() OR task_type = 'menage')
   );
-
 CREATE POLICY "tasks_select_entretien" ON public.tasks
   FOR SELECT USING (
     EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'entretien')
     AND (assigned_to = auth.uid() OR created_by = auth.uid() OR task_type = 'reparation')
   );
-
 -- Insertion: tout utilisateur authentifié peut créer une tâche
 CREATE POLICY "tasks_insert_all" ON public.tasks
   FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-
 -- Mise à jour: admin ou assigné
 CREATE POLICY "tasks_update_admin" ON public.tasks
   FOR UPDATE USING (
     EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
   );
-
 CREATE POLICY "tasks_update_assigned" ON public.tasks
   FOR UPDATE USING (assigned_to = auth.uid() OR created_by = auth.uid());
-
 -- ============================================================
 -- RLS POLICIES — logs
 -- ============================================================
-
 -- Seul l'admin peut lire les logs
 CREATE POLICY "logs_select_admin" ON public.logs
   FOR SELECT USING (
     EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
   );
-
 -- Le système insère les logs (via trigger SECURITY DEFINER)
 CREATE POLICY "logs_insert_system" ON public.logs
   FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-
 -- ============================================================
 -- REALTIME: activer pour les tables dynamiques
 -- ============================================================
 ALTER PUBLICATION supabase_realtime ADD TABLE public.rooms;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.tasks;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.logs;
-
 -- ============================================================
 -- DONNÉES INITIALES: 110 chambres depuis HIVER 2025-26.xlsx
 -- ============================================================

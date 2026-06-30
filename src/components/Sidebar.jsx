@@ -2,33 +2,29 @@ import React from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, CheckSquare, Users, ScrollText,
+  LayoutDashboard, CheckSquare, Users, ScrollText, BarChart3,
   LogOut, Menu, X, Wifi
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { ROLE_LABELS } from '../constants'
-
 const NAV_ITEMS = [
   { path: '/',          icon: LayoutDashboard, label: 'Dashboard',    roles: ['admin','reception','gouvernante','entretien'] },
   { path: '/tasks',     icon: CheckSquare,     label: 'Tâches',       roles: ['admin','reception','gouvernante','entretien'] },
+  { path: '/history',   icon: BarChart3,       label: 'Statistiques', roles: ['admin','reception'] },
   { path: '/admin',     icon: Users,           label: 'Admin',        roles: ['admin'] },
   { path: '/logs',      icon: ScrollText,      label: 'Historique',   roles: ['admin'] },
 ]
-
 export default function Sidebar({ open, onToggle }) {
   const { profile, signOut } = useAuth()
   const navigate   = useNavigate()
   const { pathname } = useLocation()
-
   const role     = profile?.role || 'reception'
   const roleInfo = ROLE_LABELS[role]
-
   const visibleItems = NAV_ITEMS.filter(item => item.roles.includes(role))
-
   function go(path) {
     navigate(path)
     if (window.innerWidth < 768) onToggle()
   }
-
   return (
     <>
       {/* Mobile backdrop */}
@@ -38,7 +34,6 @@ export default function Sidebar({ open, onToggle }) {
           onClick={onToggle}
         />
       )}
-
       {/* Sidebar */}
       <aside className={`
         fixed top-0 left-0 h-full z-40
@@ -62,7 +57,6 @@ export default function Sidebar({ open, onToggle }) {
             </div>
           </div>
         </div>
-
         {/* User profile */}
         <div className="p-4 border-b border-white/10">
           <div className="flex items-center gap-3">
@@ -77,7 +71,6 @@ export default function Sidebar({ open, onToggle }) {
             </div>
           </div>
         </div>
-
         {/* Navigation */}
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {visibleItems.map(item => {
@@ -95,7 +88,6 @@ export default function Sidebar({ open, onToggle }) {
             )
           })}
         </nav>
-
         {/* Sign out */}
         <div className="p-3 border-t border-white/10">
           <button
@@ -107,7 +99,6 @@ export default function Sidebar({ open, onToggle }) {
           </button>
         </div>
       </aside>
-
       {/* Mobile toggle button */}
       <button
         onClick={onToggle}

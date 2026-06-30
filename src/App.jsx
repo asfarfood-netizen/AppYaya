@@ -7,10 +7,9 @@ import Dashboard from './pages/Dashboard'
 import TasksPage from './pages/TasksPage'
 import AdminPanel from './pages/AdminPanel'
 import LogsPage from './pages/LogsPage'
-
+import HistoryPage from './pages/HistoryPage'
 function RequireAuth({ children, roles = [] }) {
   const { user, profile, loading } = useAuth()
-
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0f1117] flex items-center justify-center text-slate-500">
@@ -18,21 +17,16 @@ function RequireAuth({ children, roles = [] }) {
       </div>
     )
   }
-
   if (!user || !profile) {
     return <Navigate to="/login" replace />
   }
-
   if (roles.length > 0 && !roles.includes(profile.role)) {
     return <Navigate to="/" replace />
   }
-
   return children
 }
-
 function MainLayout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
-
   return (
     <div className="min-h-screen bg-[#0f1117]">
       <Sidebar open={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} />
@@ -46,10 +40,8 @@ function MainLayout({ children }) {
     </div>
   )
 }
-
 function AppRoutes() {
   const { user, profile } = useAuth()
-
   return (
     <Routes>
       {/* Public route */}
@@ -57,38 +49,37 @@ function AppRoutes() {
         path="/login" 
         element={user && profile ? <Navigate to="/" replace /> : <LoginPage />} 
       />
-
       {/* Protected routes */}
       <Route path="/" element={
         <RequireAuth>
           <MainLayout><Dashboard /></MainLayout>
         </RequireAuth>
       } />
-
       <Route path="/tasks" element={
         <RequireAuth>
           <MainLayout><TasksPage /></MainLayout>
         </RequireAuth>
       } />
-
+      <Route path="/history" element={
+        <RequireAuth roles={['admin', 'reception']}>
+          <MainLayout><HistoryPage /></MainLayout>
+        </RequireAuth>
+      } />
       <Route path="/admin" element={
         <RequireAuth roles={['admin']}>
           <MainLayout><AdminPanel /></MainLayout>
         </RequireAuth>
       } />
-
       <Route path="/logs" element={
         <RequireAuth roles={['admin']}>
           <MainLayout><LogsPage /></MainLayout>
         </RequireAuth>
       } />
-
       {/* Catch all */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }
-
 export default function App() {
   return (
     <AuthProvider>

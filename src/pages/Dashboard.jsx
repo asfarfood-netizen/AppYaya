@@ -39,12 +39,12 @@ export default function Dashboard() {
   }, [])
 
   const fetchCurrentBookings = useCallback(async () => {
-    const today = new Date().toISOString().split('T')[0]
+    const todayStr = new Date().toISOString().split('T')[0]
     const { data } = await supabase
       .from('bookings')
       .select('*')
-      .lte('check_in', today)
-      .gt('check_out', today)
+      .lte('check_in', todayStr)
+      .gt('check_out', todayStr)
     if (data) setBookings(data)
   }, [])
 

@@ -4,16 +4,18 @@ const SHEETS = [
   {
     name: 'ETE 2026',
     url: 'https://docs.google.com/spreadsheets/d/1rbNh01WA4nHJL0RZjI-TnFjt2WBt9GiWjcq_tGhmH48/gviz/tq?tqx=out:json',
-    startYear: 2026,
-    startMonth: 5 // May
+    startDate: new Date(2026, 4, 1) // May 1st 2026
   },
   {
     name: 'HIVER 2026/27',
     url: 'https://docs.google.com/spreadsheets/d/1qvv58oHR4Z8D9qp1TQJf7KS-wOG5GQizPx2VQWLeTPM/gviz/tq?tqx=out:json',
-    startYear: 2026,
-    startMonth: 11 // November
+    startDate: new Date(2026, 10, 1) // Nov 1st 2026
   }
 ];
+
+const WEEKDAY_MAP = {
+  'L': 1, 'M': 2, 'M': 3, 'J': 4, 'V': 5, 'S': 6, 'D': 0
+};
 
 /**
  * Parses the Google Sheets JSON and extracts bookings.
@@ -32,47 +34,32 @@ async function fetchSheetData(sheetInfo) {
     if (!rows || rows.length === 0) return [];
 
     const dateMap = [];
-    const headerRow = rows[0].c;
+    const dayNameRow = rows[0].c;
+    const dayNumRow = rows[1].c;
 
-    let currentMonth = sheetInfo.startMonth;
-    let currentYear = sheetInfo.startYear;
+    let currentDate = new Date(sheetInfo.startDate);
 
-    // Build the date map from the header row (row 0)
-    for (let j = 1; j < headerRow.length; j++) {
-      let cell = headerRow[j];
-      let dayVal = cell?.v;
+    // Build the date map robustly
+    for (let j = 1; j < dayNameRow.length; j++) {
+      const dayLabel = dayNameRow[j]?.v?.toString().trim().toUpperCase();
+      const dayNum = parseInt(dayNumRow[j]?.v);
 
-      if (dayVal === null || dayVal === undefined) continue;
+      if (!dayLabel || isNaN(dayNum)) continue;
 
-      if (typeof dayVal === 'string') {
-        const parsed = parseInt(dayVal);
-        if (!isNaN(parsed)) dayVal = parsed;
-        else continue;
-      }
-
-      // Handle month transition when day is 1
-      if (dayVal === 1) {
-          // Look back for the previous valid day
-          let prevDay = null;
-          for (let k = j - 1; k >= 1; k--) {
-              if (dateMap[k]) {
-                  prevDay = dateMap[k].getDate();
-                  break;
-              }
+      // If we encounter a gap or misalignment, we try to resync
+      // but assuming sequential columns is safer than the previous logic.
+      // We'll just increment from startDate and check if day number matches.
+      // If it's the first cell, we might need to adjust currentDate if startDate doesn't match dayNum.
+      if (dateMap.filter(d => d).length === 0) {
+          while (currentDate.getDate() !== dayNum) {
+              currentDate.setDate(currentDate.getDate() + 1);
           }
-          // If previous day was high (like 28-31), it's a new month
-          if (prevDay !== null && prevDay > 20) {
-              currentMonth++;
-              if (currentMonth > 12) {
-                  currentMonth = 1;
-                  currentYear++;
-              }
-          }
+      } else {
+          currentDate = new Date(currentDate);
+          currentDate.setDate(currentDate.getDate() + 1);
       }
 
-      if (dayVal && !isNaN(dayVal)) {
-        dateMap[j] = new Date(currentYear, currentMonth - 1, dayVal);
-      }
+      dateMap[j] = new Date(currentDate);
     }
 
     const bookings = [];

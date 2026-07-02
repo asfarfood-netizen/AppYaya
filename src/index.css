@@ -104,6 +104,29 @@
   }
   .animate-fade-in { animation: fadeIn 0.4s ease-out; }
   .animate-slide-in { animation: slideIn 0.3s ease-out; }
+
+  /* New Planning Grid Utilities */
+  .grid-header-cell {
+    @apply border-r border-white/5 text-center font-black transition-colors;
+  }
+  .grid-day-cell {
+    @apply border-r border-white/[0.03] transition-colors relative;
+  }
+  .booking-bar {
+    @apply absolute inset-y-2.5 z-10 flex items-center px-3 shadow-xl transition-all duration-300 border-t border-b cursor-pointer select-none;
+  }
+  .booking-bar-start {
+    @apply rounded-l-2xl border-l-2 ml-1.5;
+  }
+  .booking-bar-end {
+    @apply rounded-r-2xl border-r-2 mr-1.5;
+  }
+  .booking-glow {
+    box-shadow: 0 0 15px -2px currentColor;
+  }
+  .sticky-col {
+    @apply sticky left-0 z-40 bg-[#0d1117] border-r border-white/10 shadow-[4px_0_12px_rgba(0,0,0,0.4)];
+  }
 }
 
 /* Realtime pulse dot */

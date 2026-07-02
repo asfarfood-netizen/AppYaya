@@ -121,8 +121,8 @@ export default function PlanningPage() {
     if (scrollContainerRef.current) {
         const todayIdx = days.findIndex(day => isSameDay(day, new Date()));
         if (todayIdx !== -1) {
-            const cellWidth = 48; // Fixed width for cells in table-auto
-            const roomColWidth = 100; // sticky room column
+            const cellWidth = 60; // Increased width for better spacing
+            const roomColWidth = 120; // sticky room column
             scrollContainerRef.current.scrollLeft = (todayIdx * cellWidth) - (scrollContainerRef.current.clientWidth / 2) + roomColWidth;
         }
     }
@@ -130,160 +130,197 @@ export default function PlanningPage() {
 
   useEffect(() => {
       if (!loading && view === 'grid') {
-          setTimeout(scrollToToday, 300);
+          setTimeout(scrollToToday, 500);
       }
   }, [loading, view, currentSeasonId]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-[1600px] mx-auto">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-extrabold text-white flex items-center gap-3 uppercase tracking-tighter">
-            <Calendar className="text-indigo-400" size={24} />
-            Planning
-          </h1>
-          <div className="flex items-center gap-2 mt-0.5">
-            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">
-              Saison {currentSeason.label}
-            </p>
-            {lastSync && (
-              <span className="text-[10px] text-slate-600 font-bold uppercase">
-                • {format(new Date(lastSync), 'HH:mm', { locale: fr })}
-              </span>
-            )}
+      <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6 px-2">
+        <div className="space-y-1">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-600/20">
+                <Calendar className="text-white" size={24} />
+            </div>
+            <div>
+                <h1 className="text-3xl font-black text-white uppercase tracking-tight leading-none">
+                    Planning
+                </h1>
+                <div className="flex items-center gap-2 mt-2">
+                    <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px] font-black text-indigo-400 uppercase tracking-widest">
+                        SAISON {currentSeason.label}
+                    </span>
+                    {lastSync && (
+                    <span className="text-[10px] text-slate-500 font-bold uppercase flex items-center gap-1">
+                        <RefreshCw size={10} className="text-slate-600" />
+                        SYNCHRO À {format(new Date(lastSync), 'HH:mm', { locale: fr })}
+                    </span>
+                    )}
+                </div>
+            </div>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-3">
           {/* Season Switcher */}
-          <div className="relative group">
+          <div className="relative">
             <select
                 value={currentSeasonId}
                 onChange={(e) => setCurrentSeasonId(e.target.value)}
-                className="pl-4 pr-10 py-2.5 bg-white/5 border border-white/10 rounded-xl text-[10px] font-black text-white uppercase appearance-none focus:outline-none focus:border-indigo-500 cursor-pointer transition-all"
+                className="pl-4 pr-10 py-3 bg-white/5 border border-white/10 rounded-2xl text-xs font-black text-white uppercase appearance-none focus:outline-none focus:border-indigo-500 cursor-pointer transition-all hover:bg-white/10"
             >
                 {SEASONS_CONFIG.map(s => (
                     <option key={s.id} value={s.id}>{s.label}</option>
                 ))}
             </select>
-            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+            <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           </div>
 
           <div className="relative group">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors" size={14} />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors" size={14} />
             <input
               type="text"
-              placeholder="RECHERCHER..."
+              placeholder="Chercher un client..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-all w-40 md:w-56 uppercase"
+              className="pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-xs font-bold text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-all w-48 xl:w-72"
             />
           </div>
 
-          <div className="flex bg-white/5 rounded-xl p-1 border border-white/10">
+          <div className="flex bg-white/5 rounded-2xl p-1.5 border border-white/10">
             <button
               onClick={() => setView('grid')}
-              className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${view === 'grid' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+              className={`px-6 py-2 rounded-xl text-xs font-black uppercase transition-all ${view === 'grid' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}
             >
               Grille
             </button>
             <button
               onClick={() => setView('list')}
-              className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${view === 'list' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+              className={`px-6 py-2 rounded-xl text-xs font-black uppercase transition-all ${view === 'list' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}
             >
               Liste
             </button>
           </div>
 
-          <button onClick={handleSync} disabled={syncing} className="btn-primary !py-2.5 !text-[10px] uppercase tracking-widest">
-            <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
-            {syncing ? 'SYNC...' : 'Sync Excel'}
+          <button onClick={handleSync} disabled={syncing} className="btn-primary !py-3 !px-6 !text-xs uppercase tracking-widest gap-3">
+            <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
+            {syncing ? 'Synchronisation...' : 'Sync Excel'}
           </button>
         </div>
       </div>
 
       {/* Grid View */}
       {view === 'grid' && (
-        <div className="glass-card overflow-hidden border border-white/5 shadow-2xl relative">
+        <div className="glass-card overflow-hidden border border-white/5 shadow-2xl relative group/grid">
            <button
                 onClick={scrollToToday}
-                className="fixed bottom-8 right-8 z-50 p-4 bg-indigo-600 text-white rounded-full shadow-2xl hover:bg-indigo-500 transition-all active:scale-95 border-4 border-[#0b0d11]"
+                className="fixed bottom-10 right-10 z-50 p-5 bg-indigo-600 text-white rounded-2xl shadow-[0_20px_50px_rgba(79,70,229,0.4)] hover:bg-indigo-500 transition-all active:scale-95 border-2 border-white/20 flex items-center gap-2 group/btn"
                 title="Centrer sur Aujourd'hui"
             >
-                <Calendar size={22} />
+                <Calendar size={24} className="group-hover/btn:scale-110 transition-transform" />
+                <span className="text-xs font-black uppercase tracking-widest hidden md:block">Aujourd'hui</span>
            </button>
 
-          <div ref={scrollContainerRef} className="overflow-x-auto overflow-y-auto max-h-[72vh] custom-scrollbar">
+          <div ref={scrollContainerRef} className="overflow-x-auto overflow-y-auto max-h-[75vh] custom-scrollbar scroll-smooth">
             <table className="border-collapse w-max">
               <thead className="sticky top-0 z-30">
                 {/* Month Headers */}
-                <tr className="bg-[#0d1117] border-b border-white/5">
-                  <th className="sticky left-0 z-40 bg-[#0d1117] border-r border-white/10 w-[80px] p-0"></th>
+                <tr className="bg-[#0d1117]/95 backdrop-blur-md border-b border-white/5">
+                  <th className="sticky left-0 z-50 bg-[#0d1117] border-r border-white/10 w-[120px] p-0"></th>
                   {monthsInSeason.map((m, idx) => (
                       <th
                         key={idx}
                         colSpan={m.daysCount}
-                        className="p-3 text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] border-r border-white/5 text-center bg-indigo-500/[0.03]"
+                        className="p-4 text-[11px] font-black text-indigo-400 uppercase tracking-[0.3em] border-r border-white/5 text-center bg-indigo-500/[0.02]"
                       >
                         {m.label}
                       </th>
                   ))}
                 </tr>
                 {/* Day Headers */}
-                <tr className="bg-[#0d1117] border-b border-white/10 shadow-lg">
-                  <th className="sticky left-0 z-40 p-4 text-[10px] font-black text-slate-500 bg-[#0d1117] border-r border-white/10 w-[80px] uppercase tracking-widest text-center shadow-[4px_0_12px_rgba(0,0,0,0.4)]">
-                    #
+                <tr className="bg-[#0d1117]/95 backdrop-blur-md border-b border-white/10 shadow-xl">
+                  <th className="sticky left-0 z-50 p-4 text-[10px] font-black text-slate-500 bg-[#0d1117] border-r border-white/10 w-[120px] uppercase tracking-widest text-center shadow-[4px_0_12px_rgba(0,0,0,0.4)]">
+                    Chambre
                   </th>
                   {days.map(day => (
                     <th
                       key={day.toISOString()}
-                      className={`p-2 text-[9px] font-black border-r border-white/5 min-w-[48px] text-center ${isToday(day) ? 'bg-indigo-500/20 text-indigo-400' : 'text-slate-600'}`}
+                      className={`p-3 text-[10px] font-black border-r border-white/5 min-w-[60px] text-center ${isToday(day) ? 'bg-indigo-500/20 text-indigo-400 relative overflow-visible' : 'text-slate-600'}`}
                     >
-                      <div className="uppercase opacity-50">{format(day, 'eeeee', { locale: fr })}</div>
-                      <div className={`text-sm mt-0.5 ${isToday(day) ? 'text-white' : 'text-slate-400'}`}>{format(day, 'd')}</div>
+                      {isToday(day) && (
+                          <div className="absolute top-0 bottom-[-1000px] left-1/2 w-[2px] bg-indigo-500/30 -translate-x-1/2 pointer-events-none z-0" />
+                      )}
+                      <div className="uppercase opacity-40 text-[9px] mb-1">{format(day, 'EEEEEE', { locale: fr })}</div>
+                      <div className={`text-base font-black ${isToday(day) ? 'text-white scale-125' : 'text-slate-400'} transition-transform`}>
+                        {format(day, 'd')}
+                      </div>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {rooms.map(room => (
-                  <tr key={room.number} className="border-b border-white/5 group transition-colors">
-                    <td className="sticky left-0 z-20 p-4 bg-[#0d1117] border-r border-white/10 font-black text-white text-sm text-center group-hover:bg-[#161b22] shadow-[4px_0_12px_rgba(0,0,0,0.4)]">
-                      {room.number}
+                  <tr key={room.number} className="border-b border-white/[0.03] group transition-colors hover:bg-white/[0.01]">
+                    <td className="sticky left-0 z-40 p-4 bg-[#0d1117] border-r border-white/10 font-black text-center group-hover:bg-[#161b22] shadow-[4px_0_12px_rgba(0,0,0,0.4)] transition-colors">
+                      <div className="flex flex-col">
+                        <span className="text-base text-white">{room.number}</span>
+                        <span className="text-[8px] text-slate-600 uppercase tracking-tighter">Étage {room.floor}</span>
+                      </div>
                     </td>
                     {days.map(day => {
                       const booking = getBookingForRoomAndDay(room.number, day);
-                      const isStart = booking && isSameDay(new Date(booking.check_in), day);
-                      const isMatch = search && booking?.guest_name.toLowerCase().includes(search.toLowerCase());
-                      const isSelected = selectedBooking?.id === booking?.id;
+                      if (!booking) return (
+                         <td
+                            key={day.toISOString()}
+                            className={`grid-day-cell h-[64px] min-w-[60px] ${isToday(day) ? 'bg-indigo-500/[0.04]' : ''}`}
+                         />
+                      );
+
+                      const isStart = isSameDay(new Date(booking.check_in), day);
+                      const isEnd = isSameDay(addDays(new Date(booking.check_out), -1), day);
+                      const isMatch = search && (
+                          booking.guest_name.toLowerCase().includes(search.toLowerCase()) ||
+                          booking.room_number.toString().includes(search)
+                      );
+                      const isSelected = selectedBooking?.id === booking.id;
 
                       return (
                         <td
                           key={day.toISOString()}
-                          className={`relative p-0 border-r border-white/[0.03] h-[52px] min-w-[48px] ${isToday(day) ? 'bg-indigo-500/[0.06]' : ''} group-hover:bg-white/[0.02]`}
+                          className={`grid-day-cell h-[64px] min-w-[60px] ${isToday(day) ? 'bg-indigo-500/[0.04]' : ''}`}
                         >
-                          {booking && (
-                            <button
-                              onClick={() => setSelectedBooking(booking)}
-                              className={`absolute inset-y-2 left-0 right-0 z-10 flex items-center px-2 overflow-hidden transition-all duration-200
-                                ${booking.season.includes('ETE')
-                                  ? 'bg-indigo-600/80 border-indigo-400/50'
-                                  : 'bg-blue-600/80 border-blue-400/50'}
-                                ${isStart ? 'rounded-l-xl border-l-2 ml-1 shadow-lg' : ''}
-                                ${isSameDay(addDays(new Date(booking.check_out), -1), day) ? 'rounded-r-xl border-r-2 mr-1' : ''}
-                                ${isMatch ? 'ring-2 ring-white z-20 scale-y-110 brightness-125' : ''}
-                                ${isSelected ? 'z-20 scale-y-110 brightness-150 ring-2 ring-indigo-300' : 'hover:scale-y-105 hover:brightness-110'}
-                                border-t border-b text-left
-                              `}
-                            >
-                              {isStart && (
-                                <span className="text-[10px] font-black text-white uppercase whitespace-nowrap overflow-hidden tracking-tighter">
+                          <button
+                            onClick={() => setSelectedBooking(booking)}
+                            className={`booking-bar
+                              ${booking.season.includes('ETE')
+                                ? 'bg-indigo-600 border-indigo-400/50 text-indigo-100'
+                                : 'bg-blue-600 border-blue-400/50 text-blue-100'}
+                              ${isStart ? 'booking-bar-start' : 'left-0'}
+                              ${isEnd ? 'booking-bar-end' : 'right-0'}
+                              ${isMatch ? 'z-20 brightness-150 booking-glow ring-2 ring-white scale-y-110' : ''}
+                              ${isSelected ? 'z-20 brightness-150 ring-2 ring-indigo-300 scale-y-110' : 'hover:brightness-110 hover:scale-y-105'}
+                            `}
+                          >
+                            {isStart && (
+                              <div className="flex items-center gap-2 overflow-hidden w-full">
+                                {booking.persons && (
+                                    <div className="flex items-center gap-1 shrink-0 bg-black/20 px-1.5 py-0.5 rounded text-[9px] font-black border border-white/10">
+                                        <Users size={10} />
+                                        {booking.persons}
+                                    </div>
+                                )}
+                                <span className="text-[11px] font-black uppercase whitespace-nowrap overflow-hidden text-ellipsis tracking-tighter">
                                   {booking.guest_name}
                                 </span>
-                              )}
-                            </button>
-                          )}
+                                {booking.notes && (
+                                    <div className="shrink-0 text-white/40 group-hover:text-white/80 transition-colors">
+                                        <Filter size={10} />
+                                    </div>
+                                )}
+                              </div>
+                            )}
+                          </button>
                         </td>
                       );
                     })}

@@ -78,6 +78,16 @@ CREATE POLICY "bookings_all_admin" ON public.bookings
 CREATE INDEX IF NOT EXISTS idx_bookings_room ON public.bookings(room_number);
 CREATE INDEX IF NOT EXISTS idx_bookings_dates ON public.bookings(check_in, check_out);
 
+-- Room status planning override flag.
+-- Existing non-planning states are treated as manual so maintenance/preparation choices are not lost.
+ALTER TABLE IF EXISTS public.rooms
+  ADD COLUMN IF NOT EXISTS manual_status_override BOOLEAN DEFAULT FALSE;
+
+UPDATE public.rooms
+SET manual_status_override = TRUE
+WHERE status NOT IN ('libre', 'occupe')
+  AND manual_status_override IS DISTINCT FROM TRUE;
+
 -- Initialisation/backfill pour aujourd'hui
 INSERT INTO public.daily_stats (date, libre, occupee, en_preparation, maintenance)
 SELECT 

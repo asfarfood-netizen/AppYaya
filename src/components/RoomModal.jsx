@@ -1,12 +1,13 @@
 import React, { useState } from 'react'
-import { X, Save, AlertTriangle, Wrench, Sparkles } from 'lucide-react'
+import { X, Save, AlertTriangle, Wrench, Sparkles, RotateCcw } from 'lucide-react'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
 import { ROOM_STATUS, ROLE_ALLOWED_STATUSES } from '../constants'
+import { getPlanningStatusForRoom, resetRoomToPlanning } from '../services/roomStatusSync'
 
 const SPECIAL_FLAGS = ['VIP', 'Late Check-out', 'Early Check-in', 'NPC', 'sb']
 
-export default function RoomModal({ room, onClose, onUpdated }) {
+export default function RoomModal({ room, onClose, onUpdated, bookings = [] }) {
   const { profile } = useAuth()
   const [status, setStatus]         = useState(room.status)
   const [specialFlag, setSpecialFlag] = useState(room.special_flag || '')
@@ -16,6 +17,8 @@ export default function RoomModal({ room, onClose, onUpdated }) {
 
   const allowedStatuses = ROLE_ALLOWED_STATUSES[profile?.role] || []
   const canEdit = allowedStatuses.length > 0
+  const planning = getPlanningStatusForRoom(room, bookings)
+  const planningStatus = ROOM_STATUS[planning.status]
 
   async function handleSave() {
     if (!canEdit) return
@@ -26,6 +29,7 @@ export default function RoomModal({ room, onClose, onUpdated }) {
         .from('rooms')
         .update({
           status,
+          manual_status_override: true,
           special_flag: specialFlag || null,
           notes,
           updated_by: profile.id,
@@ -33,6 +37,20 @@ export default function RoomModal({ room, onClose, onUpdated }) {
         })
         .eq('id', room.id)
       if (err) throw err
+      onUpdated()
+      onClose()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleResetToPlanning() {
+    setSaving(true)
+    setError(null)
+    try {
+      await resetRoomToPlanning(room, bookings)
       onUpdated()
       onClose()
     } catch (e) {
@@ -79,6 +97,10 @@ export default function RoomModal({ room, onClose, onUpdated }) {
           <div className="flex-1">
             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-0.5">Statut actuel</p>
             <p className="text-lg font-black text-white uppercase">{current?.label}</p>
+            <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+              Planning: <span className="text-cyan-300">{planningStatus?.label}</span>
+              {room.manual_status_override && <span className="ml-2 text-amber-300">Mode manuel</span>}
+            </p>
           </div>
           {room.current_booking && (
              <div className="text-right">
@@ -158,7 +180,16 @@ export default function RoomModal({ room, onClose, onUpdated }) {
             )}
 
             {/* Actions */}
-            <div className="flex gap-3 pt-2">
+            <div className="grid grid-cols-1 gap-3 pt-2 sm:grid-cols-3">
+              <button
+                onClick={handleResetToPlanning}
+                disabled={saving}
+                className="btn-secondary !px-3"
+                title="Reprendre le statut depuis le planning"
+              >
+                <RotateCcw size={14} />
+                Planning
+              </button>
               <button onClick={onClose} className="btn-secondary flex-1">Annuler</button>
               <button onClick={handleSave} disabled={saving} className="btn-primary flex-1">
                 <Save size={14} />

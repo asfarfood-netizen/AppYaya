@@ -1,11 +1,16 @@
-import React, { useEffect, useState, useCallback } from 'react'
-import { RefreshCw, Wifi, WifiOff } from 'lucide-react'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import { RefreshCw, Wifi, WifiOff, RotateCcw } from 'lucide-react'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
 import FilterBar from '../components/FilterBar'
 import StatsBar from '../components/StatsBar'
 import RoomGrid from '../components/RoomGrid'
 import RoomModal from '../components/RoomModal'
+import {
+  applyPlanningStatusToRooms,
+  resetAllRoomsToPlanning,
+  syncAutomaticRoomStatuses
+} from '../services/roomStatusSync'
 
 export default function Dashboard() {
   const { profile } = useAuth()
@@ -13,6 +18,8 @@ export default function Dashboard() {
   const [tasks, setTasks]         = useState([])
   const [bookings, setBookings]   = useState([])
   const [loading, setLoading]     = useState(true)
+  const [bookingsLoaded, setBookingsLoaded] = useState(false)
+  const [resetting, setResetting] = useState(false)
   const [connected, setConnected] = useState(true)
   const [selected, setSelected]   = useState(null)
   const [filters, setFilters]     = useState({ search: '', status: 'all', floor: 'all', roomType: 'all' })
@@ -40,6 +47,7 @@ export default function Dashboard() {
   }, [])
 
   const fetchCurrentBookings = useCallback(async () => {
+    setBookingsLoaded(false)
     const todayStr = new Date().toISOString().split('T')[0]
     const { data } = await supabase
       .from('bookings')
@@ -47,6 +55,7 @@ export default function Dashboard() {
       .lte('check_in', todayStr)
       .gt('check_out', todayStr)
     if (data) setBookings(data)
+    setBookingsLoaded(true)
   }, [])
 
   useEffect(() => {
@@ -85,8 +94,23 @@ export default function Dashboard() {
     }
   }, [fetchRooms, fetchTasks, fetchCurrentBookings])
 
+  useEffect(() => {
+    if (loading || !bookingsLoaded || rooms.length === 0) return
+    syncAutomaticRoomStatuses(rooms, bookings)
+      .then((result) => {
+        if (result.updated > 0) fetchRooms()
+      })
+      .catch((error) => {
+        console.warn('[Rooms] Planning status sync skipped:', error)
+      })
+  }, [loading, bookingsLoaded, rooms, bookings, fetchRooms])
+
+  const roomsWithPlanning = useMemo(() => {
+    return applyPlanningStatusToRooms(rooms, bookings)
+  }, [rooms, bookings])
+
   // Apply filters
-  const filteredRooms = rooms.filter(r => {
+  const filteredRooms = roomsWithPlanning.filter(r => {
     if (filters.search && !r.number.toLowerCase().includes(filters.search.toLowerCase()) && !r.notes?.toLowerCase().includes(filters.search.toLowerCase())) return false
     if (filters.status !== 'all' && r.status !== filters.status) return false
     if (filters.floor !== 'all' && r.floor !== filters.floor) return false
@@ -94,11 +118,18 @@ export default function Dashboard() {
     return true
   })
 
-  // Attach booking info to rooms
-  const roomsWithBookings = filteredRooms.map(r => {
-    const booking = bookings.find(b => b.room_number === r.number)
-    return { ...r, current_booking: booking }
-  })
+  async function handleResetAllRooms() {
+    if (!window.confirm('Réinitialiser tous les statuts selon le planning ? Les changements manuels seront retirés.')) return
+    setResetting(true)
+    try {
+      await resetAllRoomsToPlanning(rooms, bookings)
+      await fetchRooms()
+    } catch (error) {
+      alert('Erreur reset planning: ' + error.message)
+    } finally {
+      setResetting(false)
+    }
+  }
 
   const today = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
@@ -131,7 +162,16 @@ export default function Dashboard() {
             {connected && <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full realtime-dot" />}
           </div>
           <button
-            onClick={() => { fetchRooms(); fetchTasks() }}
+            onClick={handleResetAllRooms}
+            disabled={resetting}
+            className="hidden sm:inline-flex items-center gap-2 px-3 py-2 glass-card hover:bg-white/10 rounded-xl transition-colors text-xs font-black uppercase text-slate-300 disabled:opacity-50"
+            title="Réinitialiser toutes les chambres selon le planning"
+          >
+            <RotateCcw size={15} className={resetting ? 'animate-spin' : ''} />
+            Reset planning
+          </button>
+          <button
+            onClick={() => { fetchRooms(); fetchTasks(); fetchCurrentBookings() }}
             className="p-2 glass-card hover:bg-white/10 rounded-xl transition-colors"
             title="Actualiser"
           >
@@ -141,7 +181,7 @@ export default function Dashboard() {
       </div>
 
       {/* Stats */}
-      <StatsBar rooms={rooms} tasks={tasks} />
+      <StatsBar rooms={roomsWithPlanning} tasks={tasks} />
 
       {/* Filters */}
       <FilterBar filters={filters} onChange={setFilters} />
@@ -160,7 +200,7 @@ export default function Dashboard() {
           <p className="text-sm">Chargement des chambres...</p>
         </div>
       ) : (
-        <RoomGrid rooms={roomsWithBookings} onRoomClick={setSelected} />
+        <RoomGrid rooms={filteredRooms} onRoomClick={setSelected} />
       )}
 
       {/* Room modal */}
@@ -168,6 +208,7 @@ export default function Dashboard() {
         <RoomModal
           room={selected}
           onClose={() => setSelected(null)}
+          bookings={bookings}
           onUpdated={() => { fetchRooms(); setSelected(null) }}
         />
       )}

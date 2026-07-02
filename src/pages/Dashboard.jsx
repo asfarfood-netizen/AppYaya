@@ -70,9 +70,17 @@ export default function Dashboard() {
       })
       .subscribe()
 
+    const bookingSub = supabase
+      .channel('bookings-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
+        fetchCurrentBookings()
+      })
+      .subscribe()
+
     return () => {
       supabase.removeChannel(roomSub)
       supabase.removeChannel(taskSub)
+      supabase.removeChannel(bookingSub)
     }
   }, [fetchRooms, fetchTasks, fetchCurrentBookings])
 

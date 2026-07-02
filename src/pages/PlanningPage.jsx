@@ -35,6 +35,18 @@ export default function PlanningPage() {
   useEffect(() => {
     fetchRooms();
     fetchBookings();
+
+    // Subscribe to booking changes for real-time updates when auto-sync happens
+    const bookingSub = supabase
+      .channel('bookings-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
+        fetchBookings();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(bookingSub);
+    };
   }, [fetchRooms, fetchBookings]);
 
   const days = useMemo(() => {

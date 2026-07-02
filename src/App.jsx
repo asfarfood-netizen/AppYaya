@@ -9,6 +9,8 @@ import AdminPanel from './pages/AdminPanel'
 import LogsPage from './pages/LogsPage'
 import HistoryPage from './pages/HistoryPage'
 import PlanningPage from './pages/PlanningPage'
+import { syncAllBookings } from './services/bookingSync'
+
 function RequireAuth({ children, roles = [] }) {
   const { user, profile, loading } = useAuth()
   if (loading) {
@@ -87,6 +89,19 @@ function AppRoutes() {
   )
 }
 export default function App() {
+  React.useEffect(() => {
+    // Initial sync
+    syncAllBookings().catch(console.error);
+
+    // Auto-sync every 5 minutes
+    const interval = setInterval(() => {
+      console.log("[Auto-Sync] Triggering 5-minute sync...");
+      syncAllBookings().catch(console.error);
+    }, 5 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <AuthProvider>
       <BrowserRouter>

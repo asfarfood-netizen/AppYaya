@@ -1,7 +1,6 @@
 import React from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
-  LayoutDashboard, CheckSquare, Users, ScrollText,
   LayoutDashboard, CheckSquare, Users, ScrollText, BarChart3,
   LogOut, Menu, X, Wifi
 } from 'lucide-react'

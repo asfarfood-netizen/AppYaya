@@ -1,8 +1,10 @@
 -- ============================================================
 -- SCHÉMA HÔTEL YAHIA — Supabase PostgreSQL
--- Exécuter dans l'éditeur SQL de Supabase (SQL Editor)
-('A4','Annexe','Appartement','libre')
-ON CONFLICT (number) DO NOTHING;
+-- ============================================================
+
+-- Activer les extensions nécessaires
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 -- ============================================================
 -- TABLE: daily_stats (Historique quotidien)
 -- ============================================================

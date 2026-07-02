@@ -16,145 +16,146 @@ const SHEETS = [
 ];
 
 async function fetchSheetData(sheetInfo) {
-  console.log(`Starting sync for ${sheetInfo.name}...`);
-  const response = await fetch(sheetInfo.url);
-  const text = await response.text();
-  const jsonStr = text.substring(text.indexOf('(') + 1, text.lastIndexOf(')'));
-  const data = JSON.parse(jsonStr);
+  try {
+    console.log(`[Sync] Fetching ${sheetInfo.name}...`);
+    const response = await fetch(sheetInfo.url);
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
-  const rows = data.table.rows;
-  if (!rows || rows.length === 0) {
-    console.warn(`No rows found in ${sheetInfo.name}`);
-    return [];
-  }
+    const text = await response.text();
+    const jsonStr = text.substring(text.indexOf('(') + 1, text.lastIndexOf(')'));
+    const data = JSON.parse(jsonStr);
 
-  // Debug: Log the first few cells of the header row to verify structure
-  console.log(`Header row sample:`, rows[0].c.slice(0, 10).map(c => c?.v));
+    const table = data.table;
+    const rows = table.rows;
+    if (!rows || rows.length === 0) {
+      console.warn(`[Sync] No rows found in ${sheetInfo.name}`);
+      return [];
+    }
 
-  const dateMap = [];
-  const headerRow = rows[0].c;
+    console.log(`[Sync] ${sheetInfo.name} has ${rows.length} rows.`);
 
-  let currentMonth = sheetInfo.startMonth;
-  let currentYear = sheetInfo.startYear;
+    // 1. Map columns to actual dates
+    // Row 0 usually contains day numbers
+    const dateMap = [];
+    const headerRow = rows[0].c;
 
-  for (let j = 1; j < headerRow.length; j++) {
-    let dayVal = headerRow[j]?.v;
+    let currentMonth = sheetInfo.startMonth;
+    let currentYear = sheetInfo.startYear;
 
-    // Convert to number if it's a string
-    if (typeof dayVal === 'string') dayVal = parseInt(dayVal);
+    for (let j = 1; j < headerRow.length; j++) {
+      let cell = headerRow[j];
+      let dayVal = cell?.v;
 
-    if (dayVal === 1 && j > 1) {
-      currentMonth++;
-      if (currentMonth > 12) {
-        currentMonth = 1;
-        currentYear++;
+      if (typeof dayVal === 'string') dayVal = parseInt(dayVal);
+
+      // Month increments when we see "1" again
+      if (dayVal === 1 && j > 1) {
+        currentMonth++;
+        if (currentMonth > 12) {
+          currentMonth = 1;
+          currentYear++;
+        }
+      }
+
+      if (dayVal && !isNaN(dayVal)) {
+        dateMap[j] = new Date(currentYear, currentMonth - 1, dayVal);
       }
     }
 
-    if (dayVal && !isNaN(dayVal)) {
-      dateMap[j] = new Date(currentYear, currentMonth - 1, dayVal);
-    }
-  }
+    const bookings = [];
 
-  const bookings = [];
+    // 2. Iterate through rows (Rooms)
+    for (let i = 1; i < rows.length; i++) {
+      const rowCells = rows[i].c;
+      if (!rowCells || !rowCells[0]?.v) continue;
 
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i].c;
-    if (!row || !row[0]?.v) continue;
+      const roomNumber = rowCells[0].v.toString().trim();
 
-    const roomNumber = row[0].v.toString().trim();
-    // Improved room number filter: allow things like "101G" but skip headers
-    if (roomNumber.toLowerCase().includes('chambre') || roomNumber === "1") continue;
+      // Skip title/header rows that might exist in the room column
+      if (roomNumber.toLowerCase().includes('chambre') ||
+          roomNumber.toLowerCase().includes('room') ||
+          roomNumber === "1") continue;
 
-    let activeBooking = null;
+      let activeBooking = null;
 
-    for (let j = 1; j < row.length; j++) {
-      const cellValue = row[j]?.v;
-      const currentDate = dateMap[j];
+      for (let j = 1; j < rowCells.length; j++) {
+        const cell = rowCells[j];
+        const cellValue = cell?.v; // Might be 'v' or 'f' (formatted)
+        const currentDate = dateMap[j];
 
-      if (!currentDate) continue;
+        if (!currentDate) continue;
 
-      if (cellValue && cellValue.toString().trim().length > 0) {
-        const valStr = cellValue.toString().trim();
+        if (cellValue && cellValue.toString().trim().length > 0) {
+          const valStr = cellValue.toString().trim();
 
-        // If we have an active booking and content is different, close it
-        if (activeBooking && valStr !== activeBooking.raw) {
+          // If we have an active booking and content is different, close it
+          if (activeBooking && valStr !== activeBooking.raw) {
+            activeBooking.checkOut = currentDate;
+            bookings.push(finalizeBooking(activeBooking, roomNumber, sheetInfo.name));
+            activeBooking = null;
+          }
+
+          if (!activeBooking) {
+            activeBooking = {
+              guestName: valStr,
+              raw: valStr,
+              checkIn: currentDate,
+              checkOut: null
+            };
+          }
+        } else if (!cellValue && activeBooking) {
+          // Stay ends here
           activeBooking.checkOut = currentDate;
           bookings.push(finalizeBooking(activeBooking, roomNumber, sheetInfo.name));
           activeBooking = null;
         }
+      }
 
-        if (!activeBooking) {
-          activeBooking = {
-            guestName: valStr,
-            raw: valStr,
-            checkIn: currentDate,
-            checkOut: null
-          };
+      // Handle booking that goes until the end of the sheet
+      if (activeBooking) {
+        let lastDate = dateMap.filter(d => d).pop();
+        if (lastDate) {
+          activeBooking.checkOut = new Date(lastDate);
+          activeBooking.checkOut.setDate(activeBooking.checkOut.getDate() + 1);
+          bookings.push(finalizeBooking(activeBooking, roomNumber, sheetInfo.name));
         }
-      } else if (!cellValue && activeBooking) {
-        activeBooking.checkOut = currentDate;
-        bookings.push(finalizeBooking(activeBooking, roomNumber, sheetInfo.name));
-        activeBooking = null;
       }
     }
 
-    if (activeBooking) {
-      // Find the last available date in dateMap to set as checkOut
-      let lastAvailableIdx = dateMap.length - 1;
-      while (lastAvailableIdx >= 0 && !dateMap[lastAvailableIdx]) lastAvailableIdx--;
-
-      if (lastAvailableIdx >= 0) {
-        activeBooking.checkOut = new Date(dateMap[lastAvailableIdx]);
-        activeBooking.checkOut.setDate(activeBooking.checkOut.getDate() + 1);
-        bookings.push(finalizeBooking(activeBooking, roomNumber, sheetInfo.name));
-      }
-    }
+    console.log(`[Sync] Finished ${sheetInfo.name}: ${bookings.length} potential bookings.`);
+    return bookings;
+  } catch (error) {
+    console.error(`[Sync] Critical error fetching ${sheetInfo.name}:`, error);
+    return [];
   }
-
-  console.log(`Found ${bookings.length} bookings in ${sheetInfo.name}`);
-  return bookings;
 }
 
 function finalizeBooking(b, room, season) {
-  let raw = b.guestName;
-  let name = raw;
+  let name = b.guestName.toString();
   let persons = null;
   let notes = [];
 
-  // 1. Remove markers like ">30/4" or "<29/4" or "sp le 23/2"
-  const datePattern = /[<>]\s?\d{1,2}\/\d{1,2}(\/\d{2,4})?/g;
-  const spPattern = /sp le\s?\d{1,2}\/\d{1,2}(\/\d{2,4})?/gi;
+  // Cleanup: Remove patterns like ">30/4", "<29/4", "sp le 23/2", etc.
+  name = name.replace(/[<>]\s?\d{1,2}\/\d{1,2}(\/\d{2,4})?/g, '');
+  name = name.replace(/sp le\s?\d{1,2}\/\d{1,2}(\/\d{2,4})?/gi, '');
 
-  name = name.replace(datePattern, '').replace(spPattern, '').trim();
-
-  // 2. Extract persons: look for "2P", "2+2", "3 Persons", etc.
-  const personPattern = /(\d\s?\+\s?\d|\d+)\s?(P|personnes|pers|pax)?$/i;
-  const pMatch = name.match(personPattern);
-  if (pMatch) {
-    persons = pMatch[1].replace(/\s/g, '');
-    name = name.replace(pMatch[0], '').trim();
+  // Extract persons: "2P", "3 pers", "2+2", etc.
+  const personMatch = name.match(/(\d\s?\+\s?\d|\d+)\s?(P|personnes|pers|pax)?$/i);
+  if (personMatch) {
+    persons = personMatch[1].replace(/\s/g, '');
+    name = name.replace(personMatch[0], '').trim();
   }
 
-  // 3. Extract emails or phone numbers into notes
-  const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-  const phonePattern = /(\+\d{1,3}[- ]?)?\d{10,}/g;
-
-  const emails = name.match(emailPattern);
-  const phones = name.match(phonePattern);
-
-  if (emails) {
-    notes.push(...emails);
-    emails.forEach(e => name = name.replace(e, ''));
-  }
-  if (phones) {
-    notes.push(...phones);
-    phones.forEach(p => name = name.replace(p, ''));
+  // Extract contact info
+  const emailMatch = name.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g);
+  if (emailMatch) {
+    notes.push(...emailMatch);
+    emailMatch.forEach(e => name = name.replace(e, ''));
   }
 
-  // 4. Final Cleanup
+  // Final trim and format
   name = name.replace(/[,;/-]$/, '').trim();
-  if (!name) name = "Client";
+  if (!name) name = "CLIENT";
 
   return {
     room_number: room,
@@ -171,35 +172,33 @@ export async function syncAllBookings() {
   let allBookings = [];
 
   for (const sheet of SHEETS) {
-    try {
-      const data = await fetchSheetData(sheet);
-      allBookings = allBookings.concat(data);
-    } catch (e) {
-      console.error(`Error syncing ${sheet.name}:`, e);
-    }
+    const data = await fetchSheetData(sheet);
+    allBookings = allBookings.concat(data);
   }
 
-  if (allBookings.length > 0) {
-    // Deduplicate precisely
-    const uniqueMap = new Map();
-    for (const b of allBookings) {
-      const key = `${b.room_number}|${b.guest_name}|${b.check_in}|${b.check_out}`;
-      uniqueMap.set(key, b);
-    }
-
-    const uniqueList = Array.from(uniqueMap.values());
-    console.log(`Upserting ${uniqueList.length} unique bookings to Supabase...`);
-
-    const { error } = await supabase
-      .from('bookings')
-      .upsert(uniqueList, { onConflict: 'room_number, guest_name, check_in, check_out' });
-
-    if (error) {
-      console.error('Supabase Upsert Error:', error);
-      throw error;
-    }
-    return uniqueList.length;
+  if (allBookings.length === 0) {
+    console.warn("[Sync] No bookings found in any sheet.");
+    return 0;
   }
 
-  return 0;
+  // Deduplicate before upserting
+  const uniqueMap = new Map();
+  for (const b of allBookings) {
+    const key = `${b.room_number}|${b.guest_name}|${b.check_in}|${b.check_out}`;
+    uniqueMap.set(key, b);
+  }
+
+  const uniqueList = Array.from(uniqueMap.values());
+  console.log(`[Sync] Upserting ${uniqueList.length} unique records to Supabase...`);
+
+  const { error } = await supabase
+    .from('bookings')
+    .upsert(uniqueList, { onConflict: 'room_number, guest_name, check_in, check_out' });
+
+  if (error) {
+    console.error('[Sync] Supabase Upsert Error:', error);
+    throw error;
+  }
+
+  return uniqueList.length;
 }

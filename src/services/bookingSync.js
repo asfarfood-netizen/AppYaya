@@ -5,13 +5,13 @@ const SHEETS = [
     name: 'ETE 2026',
     url: 'https://docs.google.com/spreadsheets/d/1rbNh01WA4nHJL0RZjI-TnFjt2WBt9GiWjcq_tGhmH48/gviz/tq?tqx=out:json',
     startYear: 2026,
-    startMonth: 5
+    startMonth: 5 // May
   },
   {
     name: 'HIVER 2026/27',
     url: 'https://docs.google.com/spreadsheets/d/1qvv58oHR4Z8D9qp1TQJf7KS-wOG5GQizPx2VQWLeTPM/gviz/tq?tqx=out:json',
     startYear: 2026,
-    startMonth: 11
+    startMonth: 11 // November
   }
 ];
 
@@ -42,15 +42,33 @@ async function fetchSheetData(sheetInfo) {
       let cell = headerRow[j];
       let dayVal = cell?.v;
 
-      if (typeof dayVal === 'string') dayVal = parseInt(dayVal);
+      if (dayVal === null || dayVal === undefined) continue;
+
+      if (typeof dayVal === 'string') {
+        const parsed = parseInt(dayVal);
+        if (!isNaN(parsed)) dayVal = parsed;
+        else continue;
+      }
 
       // Handle month transition when day is 1
-      if (dayVal === 1 && j > 1) {
-        currentMonth++;
-        if (currentMonth > 12) {
-          currentMonth = 1;
-          currentYear++;
-        }
+      // Check if dayVal is 1 AND we previously had a high day (like 28-31)
+      // or if it's just the first valid day we find (j > 1 check from previous code was a bit weak)
+      if (dayVal === 1) {
+          // Look back for the previous valid day
+          let prevDay = null;
+          for (let k = j - 1; k >= 1; k--) {
+              if (dateMap[k]) {
+                  prevDay = dateMap[k].getDate();
+                  break;
+              }
+          }
+          if (prevDay !== null && prevDay > 20) {
+              currentMonth++;
+              if (currentMonth > 12) {
+                  currentMonth = 1;
+                  currentYear++;
+              }
+          }
       }
 
       if (dayVal && !isNaN(dayVal)) {
@@ -66,8 +84,8 @@ async function fetchSheetData(sheetInfo) {
       if (!rowCells || !rowCells[0]?.v) continue;
 
       const roomNumber = rowCells[0].v.toString().trim();
-      // Skip headers or special rows
-      if (roomNumber.toLowerCase().includes('chambre') || roomNumber === "1") continue;
+      // Skip headers or special rows (if room number is not a number and doesn't look like one)
+      if (isNaN(parseInt(roomNumber)) && !roomNumber.toLowerCase().includes('annexe')) continue;
 
       let activeBooking = null;
 
@@ -81,9 +99,8 @@ async function fetchSheetData(sheetInfo) {
         if (cellValue && cellValue.toString().trim().length > 0) {
           const valStr = cellValue.toString().trim();
 
-          // If cell contains '/', it might be a transition (Guest1 checkout / Guest2 checkin)
-          // For now, we treat the whole string as the "guest name" and let finalizeBooking clean it up.
-          // But if the value changed from the previous cell, we finalize the previous one.
+          // If the cell value is different from the active booking's raw value,
+          // it means a new guest has arrived.
           if (activeBooking && valStr !== activeBooking.raw) {
             activeBooking.checkOut = currentDate;
             bookings.push(finalizeBooking(activeBooking, roomNumber, sheetInfo.name));
@@ -108,7 +125,7 @@ async function fetchSheetData(sheetInfo) {
 
       // Handle booking that goes until the end of the sheet
       if (activeBooking) {
-        let lastDate = dateMap.filter(d => d).pop();
+        let lastDate = [...dateMap].reverse().find(d => d);
         if (lastDate) {
           activeBooking.checkOut = new Date(lastDate);
           activeBooking.checkOut.setDate(activeBooking.checkOut.getDate() + 1);
@@ -135,28 +152,34 @@ function finalizeBooking(b, room, season) {
   let checkOut = new Date(b.checkOut);
 
   // 1. Extract and fix arrival/departure dates if mentioned in name (e.g. ">9/4" or "15/6<")
-  const arrivalMatch = name.match(/>(\d{1,2}\/\d{1,2}(\/\d{2,4})?)/);
+  // Handle various formats like >9/4, >09/04, >9/4/26
+  const arrivalMatch = name.match(/>(\d{1,2})\/(\d{1,2})(\/(\d{2,4}))?/);
   if (arrivalMatch) {
-    const [d, m, y] = arrivalMatch[1].split('/');
-    const year = y ? (y.length === 2 ? 2000 + parseInt(y) : parseInt(y)) : checkIn.getFullYear();
-    const parsedArrival = new Date(year, parseInt(m) - 1, parseInt(d));
-    if (!isNaN(parsedArrival)) checkIn = parsedArrival;
+    const d = parseInt(arrivalMatch[1]);
+    const m = parseInt(arrivalMatch[2]);
+    const yStr = arrivalMatch[4];
+    const year = yStr ? (yStr.length === 2 ? 2000 + parseInt(yStr) : parseInt(yStr)) : checkIn.getFullYear();
+    const parsedArrival = new Date(year, m - 1, d);
+    if (!isNaN(parsedArrival)) {
+        checkIn = parsedArrival;
+        // If the parsed date is before the original start of the sheet month,
+        // it might be from the previous year or just a correction.
+    }
     name = name.replace(arrivalMatch[0], '').trim();
   }
 
-  const departureMatch = name.match(/(\d{1,2}\/\d{1,2}(\/\d{2,4})?)< /);
+  const departureMatch = name.match(/(\d{1,2})\/(\d{1,2})(\/(\d{2,4}))?</);
   if (departureMatch) {
-    const [d, m, y] = departureMatch[1].split('/');
-    const year = y ? (y.length === 2 ? 2000 + parseInt(y) : parseInt(y)) : checkOut.getFullYear();
-    const parsedDeparture = new Date(year, parseInt(m) - 1, parseInt(d));
+    const d = parseInt(departureMatch[1]);
+    const m = parseInt(departureMatch[2]);
+    const yStr = departureMatch[4];
+    const year = yStr ? (yStr.length === 2 ? 2000 + parseInt(yStr) : parseInt(yStr)) : checkOut.getFullYear();
+    const parsedDeparture = new Date(year, m - 1, d);
     if (!isNaN(parsedDeparture)) checkOut = parsedDeparture;
     name = name.replace(departureMatch[0], '').trim();
   }
 
   // 2. Handle transitions like "GUEST1 / GUEST2"
-  // If we are finalising a booking and it has a '/', it's usually the transition cell.
-  // The current logic might have already split it if the next cell was different.
-  // We'll just clean up the '/' and common debris.
   name = name.replace(/^[\s/]+|[\s/]+$/g, '');
 
   // 3. Extract persons (patterns like "2P", "2 pers", "2+1", "2+bb")
@@ -173,9 +196,9 @@ function finalizeBooking(b, room, season) {
     emailMatch.forEach(e => name = name.replace(e, ''));
   }
 
-  const phoneMatch = name.match(/(\+?\d{1,3}[\s.-]?)?\d{2,4}[\s.-]?\d{2,4}[\s.-]?\d{2,4}/g);
+  // Improved phone regex
+  const phoneMatch = name.match(/(\+?\d{1,3}[\s.-]?)?(\d{2,4}[\s.-]?){2,4}\d{2,4}/g);
   if (phoneMatch) {
-    // Filter out strings that are likely not phones (e.g. room numbers or dates)
     const validPhones = phoneMatch.filter(p => p.replace(/\D/g, '').length >= 8);
     notes.push(...validPhones);
     validPhones.forEach(p => name = name.replace(p, ''));
@@ -187,8 +210,14 @@ function finalizeBooking(b, room, season) {
     return '';
   });
 
+  // Clean markers like >309 or <402 which refer to other rooms
+  name = name.replace(/[<>]\d{3,4}/g, (match) => {
+      notes.push("Ref: " + match);
+      return '';
+  });
+
   name = name.replace(/[,;/-]+$/, '').replace(/^[,;/-]+/, '').trim();
-  if (!name || name === "/") name = "CLIENT";
+  if (!name || name === "/" || name.toUpperCase() === "C" || name.toUpperCase() === "NC") name = "CLIENT";
 
   return {
     room_number: room,

@@ -1,14 +1,15 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { syncAllBookings } from '../services/bookingSync';
+import { SEASONS_CONFIG } from '../constants';
 import {
   Calendar, RefreshCw, ChevronLeft, ChevronRight,
-  Users, BedDouble, Filter, Download
+  Users, BedDouble, Filter, Download, X, Search,
+  ChevronDown
 } from 'lucide-react';
 import {
-  format, addMonths, subMonths, startOfMonth, endOfMonth,
-  eachDayOfInterval, isSameDay, isWithinInterval, addDays,
-  startOfWeek, endOfWeek, isToday
+  format, eachDayOfInterval, isSameDay, isWithinInterval, addDays,
+  isToday, startOfMonth, endOfMonth, differenceInDays
 } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
@@ -17,11 +18,17 @@ export default function PlanningPage() {
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentSeasonId, setCurrentSeasonId] = useState(SEASONS_CONFIG[0].id);
   const [view, setView] = useState('grid'); // 'grid' or 'list'
   const [search, setSearch] = useState('');
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [lastSync, setLastSync] = useState(localStorage.getItem('last_booking_sync'));
+
+  const scrollContainerRef = useRef(null);
+
+  const currentSeason = useMemo(() =>
+    SEASONS_CONFIG.find(s => s.id === currentSeasonId),
+  [currentSeasonId]);
 
   const fetchRooms = useCallback(async () => {
     const { data } = await supabase.from('rooms').select('number, floor').order('number');
@@ -39,7 +46,6 @@ export default function PlanningPage() {
     fetchRooms();
     fetchBookings();
 
-    // Subscribe to booking changes for real-time updates when auto-sync happens
     const bookingSub = supabase
       .channel('bookings-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
@@ -53,17 +59,37 @@ export default function PlanningPage() {
   }, [fetchRooms, fetchBookings]);
 
   const days = useMemo(() => {
-    const start = startOfMonth(currentDate);
-    const end = endOfMonth(currentDate);
-    return eachDayOfInterval({ start, end });
-  }, [currentDate]);
+    return eachDayOfInterval({ start: currentSeason.start, end: currentSeason.end });
+  }, [currentSeason]);
+
+  const monthsInSeason = useMemo(() => {
+    const months = [];
+    let current = startOfMonth(currentSeason.start);
+    const end = endOfMonth(currentSeason.end);
+
+    while (current <= end) {
+      const monthStart = current > currentSeason.start ? current : currentSeason.start;
+      const monthEnd = endOfMonth(current) < currentSeason.end ? endOfMonth(current) : currentSeason.end;
+
+      months.push({
+        label: format(current, 'MMMM yyyy', { locale: fr }),
+        daysCount: differenceInDays(monthEnd, monthStart) + 1,
+        start: monthStart,
+        end: monthEnd
+      });
+      current = addDays(endOfMonth(current), 1);
+    }
+    return months;
+  }, [currentSeason, days]);
 
   async function handleSync() {
     setSyncing(true);
     try {
       await syncAllBookings();
       await fetchBookings();
-      setLastSync(new Date().toISOString());
+      const now = new Date().toISOString();
+      setLastSync(now);
+      localStorage.setItem('last_booking_sync', now);
     } catch (e) {
       alert('Erreur: ' + e.message);
     } finally {
@@ -79,6 +105,23 @@ export default function PlanningPage() {
     });
   };
 
+  const scrollToToday = () => {
+    if (scrollContainerRef.current) {
+        const todayIdx = days.findIndex(day => isSameDay(day, new Date()));
+        if (todayIdx !== -1) {
+            const cellWidth = 44; // min-w-[44px]
+            const roomColWidth = 120; // sticky room column
+            scrollContainerRef.current.scrollLeft = (todayIdx * cellWidth) - (scrollContainerRef.current.clientWidth / 2) + roomColWidth;
+        }
+    }
+  };
+
+  useEffect(() => {
+      if (!loading && view === 'grid') {
+          setTimeout(scrollToToday, 500);
+      }
+  }, [loading, view, currentSeasonId]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -89,8 +132,8 @@ export default function PlanningPage() {
             Planning des Réservations
           </h1>
           <div className="flex items-center gap-2 mt-0.5">
-            <p className="text-slate-400 text-sm capitalize">
-              {format(currentDate, 'MMMM yyyy', { locale: fr })}
+            <p className="text-slate-400 text-sm font-bold uppercase tracking-tight">
+              Saison: {currentSeason.label}
             </p>
             {lastSync && (
               <span className="text-[10px] text-slate-500 font-medium">
@@ -101,8 +144,22 @@ export default function PlanningPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Season Switcher */}
           <div className="relative group">
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors" size={14} />
+            <select
+                value={currentSeasonId}
+                onChange={(e) => setCurrentSeasonId(e.target.value)}
+                className="pl-4 pr-10 py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-bold text-white appearance-none focus:outline-none focus:border-indigo-500 cursor-pointer"
+            >
+                {SEASONS_CONFIG.map(s => (
+                    <option key={s.id} value={s.id}>{s.label}</option>
+                ))}
+            </select>
+            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+          </div>
+
+          <div className="relative group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors" size={14} />
             <input
               type="text"
               placeholder="Rechercher client..."
@@ -134,58 +191,45 @@ export default function PlanningPage() {
         </div>
       </div>
 
-      {/* Navigation Controls */}
-      <div className="flex items-center justify-between bg-white/5 p-3 rounded-2xl border border-white/10">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setCurrentDate(subMonths(currentDate, 1))}
-            className="p-2 hover:bg-white/10 rounded-xl text-slate-400 transition-colors"
-          >
-            <ChevronLeft size={20} />
-          </button>
-          <button
-            onClick={() => setCurrentDate(new Date())}
-            className="px-4 py-2 text-xs font-bold text-white hover:bg-white/10 rounded-xl transition-colors border border-white/10"
-          >
-            Aujourd'hui
-          </button>
-          <button
-            onClick={() => setCurrentDate(addMonths(currentDate, 1))}
-            className="p-2 hover:bg-white/10 rounded-xl text-slate-400 transition-colors"
-          >
-            <ChevronRight size={20} />
-          </button>
-        </div>
-
-        <div className="hidden sm:flex items-center gap-4 text-xs">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-indigo-600 rounded" />
-            <span className="text-slate-400">Été</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-blue-600 rounded" />
-            <span className="text-slate-400">Hiver</span>
-          </div>
-        </div>
-      </div>
-
       {/* Grid View */}
       {view === 'grid' && (
-        <div className="glass-card overflow-hidden border border-white/10 shadow-2xl">
-          <div className="overflow-x-auto overflow-y-auto max-h-[70vh]">
-            <table className="w-full border-collapse">
+        <div className="glass-card overflow-hidden border border-white/10 shadow-2xl relative">
+           <button
+                onClick={scrollToToday}
+                className="absolute bottom-6 right-6 z-30 p-3 bg-indigo-600 text-white rounded-full shadow-2xl hover:bg-indigo-500 transition-all active:scale-90 md:hidden"
+                title="Aujourd'hui"
+            >
+                <Calendar size={20} />
+           </button>
+
+          <div ref={scrollContainerRef} className="overflow-x-auto overflow-y-auto max-h-[75vh]">
+            <table className="w-full border-collapse table-fixed">
               <thead className="sticky top-0 z-20">
-                <tr className="bg-[#0f1117] border-b border-white/10">
-                  <th className="sticky left-0 z-30 p-4 text-xs font-bold text-slate-400 bg-[#0f1117] border-r border-white/10 min-w-[120px]">
+                {/* Month Headers */}
+                <tr className="bg-[#0f1117] border-b border-white/5">
+                  <th className="sticky left-0 z-30 bg-[#0f1117] border-r border-white/10 w-[120px]"></th>
+                  {monthsInSeason.map((m, idx) => (
+                      <th
+                        key={idx}
+                        colSpan={m.daysCount}
+                        className="p-2 text-[10px] font-black text-slate-400 uppercase tracking-widest border-r border-white/5 text-center bg-white/[0.02]"
+                      >
+                        {m.label}
+                      </th>
+                  ))}
+                </tr>
+                {/* Day Headers */}
+                <tr className="bg-[#0f1117] border-b border-white/10 shadow-sm">
+                  <th className="sticky left-0 z-30 p-4 text-[10px] font-black text-slate-500 bg-[#0f1117] border-r border-white/10 w-[120px] uppercase tracking-tighter">
                     CHAMBRE
                   </th>
                   {days.map(day => (
                     <th
                       key={day.toISOString()}
-                      className={`p-2 text-[10px] font-bold border-r border-white/5 min-w-[40px] ${isToday(day) ? 'bg-indigo-500/20 text-indigo-400' : 'text-slate-500'}`}
+                      className={`p-1.5 text-[9px] font-bold border-r border-white/5 min-w-[44px] ${isToday(day) ? 'bg-indigo-500/20 text-indigo-400' : 'text-slate-500'}`}
                     >
-                      <div className="uppercase">{format(day, 'eee', { locale: fr })}</div>
-                      <div className="text-sm text-white mt-1">{format(day, 'd')}</div>
+                      <div className="uppercase opacity-60">{format(day, 'eee', { locale: fr })}</div>
+                      <div className="text-sm text-white mt-0.5">{format(day, 'd')}</div>
                     </th>
                   ))}
                 </tr>
@@ -244,64 +288,76 @@ export default function PlanningPage() {
 
       {/* List View */}
       {view === 'list' && (
-        <div className="glass-card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-white/10 bg-white/5">
-                  <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Client</th>
-                  <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Chambre</th>
-                  <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Arrivée</th>
-                  <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Départ</th>
-                  <th className="p-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Saison</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {bookings
-                  .filter(b => {
-                    const matchesSearch = !search || b.guest_name.toLowerCase().includes(search.toLowerCase());
-                    const isInMonth = isWithinInterval(new Date(b.check_in), {
-                      start: startOfMonth(currentDate),
-                      end: endOfMonth(currentDate)
-                    }) || isWithinInterval(new Date(b.check_out), {
-                      start: startOfMonth(currentDate),
-                      end: endOfMonth(currentDate)
-                    });
-                    return matchesSearch && isInMonth;
-                  })
-                  .sort((a,b) => new Date(a.check_in) - new Date(b.check_in))
-                  .map(booking => (
-                    <tr
-                      key={booking.id}
-                      className="hover:bg-white/5 transition-colors cursor-pointer"
-                      onClick={() => setSelectedBooking(booking)}
-                    >
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <Users size={14} className="text-indigo-400" />
-                          <span className="text-sm font-bold text-white uppercase">{booking.guest_name}</span>
+        <div className="space-y-8">
+            {monthsInSeason.map((m, idx) => {
+                const monthBookings = bookings
+                    .filter(b => {
+                        const matchesSearch = !search || b.guest_name.toLowerCase().includes(search.toLowerCase());
+                        const start = new Date(b.check_in);
+                        const end = new Date(b.check_out);
+                        // Show in list if any part of booking is in this month
+                        const isInMonth = (start >= m.start && start <= m.end) || (end >= m.start && end <= m.end);
+                        return matchesSearch && isInMonth;
+                    })
+                    .sort((a,b) => new Date(a.check_in) - new Date(b.check_in));
+
+                if (monthBookings.length === 0) return null;
+
+                return (
+                    <div key={idx} className="glass-card overflow-hidden">
+                        <div className="p-4 bg-white/5 border-b border-white/10 flex items-center justify-between">
+                            <h3 className="text-sm font-black text-white uppercase tracking-widest">{m.label}</h3>
+                            <span className="text-xs text-slate-500 font-bold">{monthBookings.length} réservations</span>
                         </div>
-                      </td>
-                      <td className="p-4 font-medium text-slate-300">{booking.room_number}</td>
-                      <td className="p-4 text-sm text-slate-400">{format(new Date(booking.check_in), 'dd MMM yyyy', { locale: fr })}</td>
-                      <td className="p-4 text-sm text-slate-400">{format(new Date(booking.check_out), 'dd MMM yyyy', { locale: fr })}</td>
-                      <td className="p-4">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full border ${booking.season.includes('ETE') ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30' : 'bg-blue-500/10 text-blue-400 border-blue-500/30'}`}>
-                          {booking.season}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="border-b border-white/5">
+                                <th className="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Client</th>
+                                <th className="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Chambre</th>
+                                <th className="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Arrivée</th>
+                                <th className="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Départ</th>
+                                <th className="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Saison</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {monthBookings.map(booking => (
+                                    <tr
+                                    key={booking.id}
+                                    className="hover:bg-white/5 transition-colors cursor-pointer group"
+                                    onClick={() => setSelectedBooking(booking)}
+                                    >
+                                    <td className="p-4">
+                                        <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform">
+                                            <Users size={14} />
+                                        </div>
+                                        <span className="text-sm font-bold text-white uppercase">{booking.guest_name}</span>
+                                        </div>
+                                    </td>
+                                    <td className="p-4 font-black text-slate-300">{booking.room_number}</td>
+                                    <td className="p-4 text-xs font-bold text-emerald-400">{format(new Date(booking.check_in), 'dd MMM yyyy', { locale: fr })}</td>
+                                    <td className="p-4 text-xs font-bold text-red-400">{format(new Date(booking.check_out), 'dd MMM yyyy', { locale: fr })}</td>
+                                    <td className="p-4">
+                                        <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${booking.season.includes('ETE') ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30' : 'bg-blue-500/10 text-blue-400 border-blue-500/30'}`}>
+                                        {booking.season}
+                                        </span>
+                                    </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                            </table>
+                        </div>
+                    </div>
+                );
+            })}
         </div>
       )}
 
       {/* Booking Detail Modal */}
       {selectedBooking && (
         <div className="modal-overlay" onClick={() => setSelectedBooking(null)}>
-          <div className="modal-box !max-w-md" onClick={e => e.stopPropagation()}>
+          <div className="modal-box !max-w-md border-indigo-500/30" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-black text-white uppercase tracking-tight">Détails Réservation</h2>
               <button onClick={() => setSelectedBooking(null)} className="p-2 hover:bg-white/5 rounded-xl transition-colors">
@@ -310,7 +366,7 @@ export default function PlanningPage() {
             </div>
 
             <div className="space-y-6">
-              <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+              <div className="p-4 rounded-2xl bg-white/5 border border-white/10 shadow-inner">
                 <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Client</p>
                 <p className="text-lg font-black text-white uppercase">{selectedBooking.guest_name}</p>
               </div>
@@ -327,11 +383,11 @@ export default function PlanningPage() {
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+                <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/20">
                   <p className="text-[10px] text-emerald-500 font-bold uppercase tracking-widest mb-1">Arrivée</p>
                   <p className="text-sm font-bold text-white">{format(new Date(selectedBooking.check_in), 'dd MMMM yyyy', { locale: fr })}</p>
                 </div>
-                <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+                <div className="p-4 rounded-2xl bg-red-500/5 border border-red-500/20">
                   <p className="text-[10px] text-red-500 font-bold uppercase tracking-widest mb-1">Départ</p>
                   <p className="text-sm font-bold text-white">{format(new Date(selectedBooking.check_out), 'dd MMMM yyyy', { locale: fr })}</p>
                 </div>
@@ -340,13 +396,13 @@ export default function PlanningPage() {
               {selectedBooking.notes && (
                 <div className="p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/20">
                   <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest mb-1">Notes / Contact</p>
-                  <p className="text-sm text-slate-300 leading-relaxed">{selectedBooking.notes}</p>
+                  <p className="text-sm text-slate-300 leading-relaxed font-medium">{selectedBooking.notes}</p>
                 </div>
               )}
 
               <div className="flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/10">
-                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Saison</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full border ${selectedBooking.season.includes('ETE') ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30' : 'bg-blue-500/10 text-blue-400 border-blue-500/30'}`}>
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Provenance</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${selectedBooking.season.includes('ETE') ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30' : 'bg-blue-500/10 text-blue-400 border-blue-500/30'}`}>
                   {selectedBooking.season}
                 </span>
               </div>

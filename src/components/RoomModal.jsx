@@ -46,35 +46,46 @@ export default function RoomModal({ room, onClose, onUpdated }) {
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box">
+      <div className="modal-box !max-w-xl">
         {/* Header */}
-        <div className="flex items-start justify-between mb-6">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <h2 className="text-2xl font-extrabold text-white">Chambre {room.number}</h2>
-              {room.special_flag && (
-                <span className="px-2 py-0.5 bg-purple-500/30 text-purple-300 text-xs font-bold rounded-md border border-purple-500/40">
-                  {room.special_flag}
-                </span>
-              )}
+        <div className="flex items-start justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-indigo-600/20 border border-indigo-500/20 flex items-center justify-center text-2xl font-black text-white">
+              {room.number}
             </div>
-            <p className="text-slate-400 text-sm">{room.room_type} · Étage {room.floor}</p>
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <h2 className="text-2xl font-black text-white uppercase tracking-tight">Détails Chambre</h2>
+                {room.special_flag && (
+                  <span className="px-2 py-0.5 bg-purple-500/30 text-purple-300 text-[10px] font-black rounded-md border border-purple-500/40 uppercase">
+                    {room.special_flag}
+                  </span>
+                )}
+              </div>
+              <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">{room.room_type} · Étage {room.floor}</p>
+            </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
-            <X size={18} className="text-slate-400" />
+          <button onClick={onClose} className="p-2.5 hover:bg-white/5 rounded-xl transition-colors text-slate-500 hover:text-white">
+            <X size={20} />
           </button>
         </div>
 
         {/* Current status display */}
         <div
-          className="flex items-center gap-3 p-3 rounded-xl mb-5 border"
-          style={{ borderColor: current?.color + '40', background: current?.color + '15' }}
+          className="flex items-center gap-4 p-5 rounded-2xl mb-8 border-l-4"
+          style={{ borderColor: current?.color, background: current?.color + '08' }}
         >
-          <span className="text-2xl">{current?.emoji}</span>
-          <div>
-            <p className="text-xs text-slate-400 font-medium">Statut actuel</p>
-            <p className="font-bold text-white">{current?.label}</p>
+          <span className="text-3xl">{current?.emoji}</span>
+          <div className="flex-1">
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-0.5">Statut actuel</p>
+            <p className="text-lg font-black text-white uppercase">{current?.label}</p>
           </div>
+          {room.current_booking && (
+             <div className="text-right">
+                <p className="text-[10px] text-indigo-400 font-bold uppercase mb-0.5">Client Actuel</p>
+                <p className="text-sm font-black text-white">{room.current_booking.guest_name}</p>
+             </div>
+          )}
         </div>
 
         {canEdit ? (

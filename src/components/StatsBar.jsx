@@ -1,5 +1,5 @@
 import React from 'react'
-import { ROOM_STATUS, TASK_TYPE } from '../constants'
+import { ROOM_STATUS } from '../constants'
 
 export default function StatsBar({ rooms, tasks }) {
   const counts = Object.keys(ROOM_STATUS).reduce((acc, key) => {
@@ -13,61 +13,59 @@ export default function StatsBar({ rooms, tasks }) {
     urgentes:   tasks?.filter(t => t.priority === 'urgente' && t.status !== 'terminee').length || 0,
   }
 
-  return (
-    <div className="space-y-3">
-      {/* Room stats */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-        {Object.entries(ROOM_STATUS).map(([key, val]) => (
-          <div
-            key={key}
-            className="glass-card p-3 text-center hover:scale-105 transition-transform duration-200"
-            style={{ borderColor: val.color + '30' }}
-          >
-            <div className="text-xl font-extrabold text-white" style={{ color: val.color }}>
-              {counts[key]}
-            </div>
-            <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">{val.label}</div>
-          </div>
-        ))}
-      </div>
+  const occupancyRate = rooms.length ? Math.round((counts.occupe / rooms.length) * 100) : 0
 
-      {/* Task stats */}
-      {tasks && (
-        <div className="grid grid-cols-3 gap-2">
-          <div className="glass-card p-3 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-yellow-500/20 flex items-center justify-center text-sm">⏳</div>
-            <div>
-              <div className="text-lg font-bold text-yellow-400">{taskCounts.en_attente}</div>
-              <div className="text-[10px] text-slate-400">En attente</div>
-            </div>
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {/* Main Stats Cards */}
+        <div className="glass-card p-5 border-l-4 border-l-blue-500">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Occupation</p>
+          <div className="flex items-end justify-between">
+            <span className="text-3xl font-black text-white">{occupancyRate}%</span>
+            <span className="text-xs font-bold text-blue-400 mb-1">{counts.occupe} / {rooms.length}</span>
           </div>
-          <div className="glass-card p-3 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center text-sm">🔄</div>
-            <div>
-              <div className="text-lg font-bold text-blue-400">{taskCounts.en_cours}</div>
-              <div className="text-[10px] text-slate-400">En cours</div>
-            </div>
-          </div>
-          <div className="glass-card p-3 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center text-sm">🚨</div>
-            <div>
-              <div className="text-lg font-bold text-red-400">{taskCounts.urgentes}</div>
-              <div className="text-[10px] text-slate-400">Urgentes</div>
-            </div>
+          <div className="w-full h-1 bg-white/5 rounded-full mt-3 overflow-hidden">
+            <div className="h-full bg-blue-500" style={{ width: `${occupancyRate}%` }} />
           </div>
         </div>
-      )}
 
-      {/* Total */}
-      <div className="flex items-center justify-between px-1">
-        <span className="text-xs text-slate-500">
-          Total : <strong className="text-slate-300">{rooms.length}</strong> chambre{rooms.length > 1 ? 's' : ''}
-        </span>
-        <span className="text-xs text-slate-500">
-          Occupation : <strong className="text-blue-400">
-            {rooms.length ? Math.round((counts.occupe / rooms.length) * 100) : 0}%
-          </strong>
-        </span>
+        <div className="glass-card p-5 border-l-4 border-l-emerald-500">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Libres</p>
+          <div className="flex items-end justify-between">
+            <span className="text-3xl font-black text-white">{counts.libre}</span>
+            <span className="text-emerald-400 text-xl">✨</span>
+          </div>
+        </div>
+
+        <div className="glass-card p-5 border-l-4 border-l-amber-500">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">En Préparation</p>
+          <div className="flex items-end justify-between">
+            <span className="text-3xl font-black text-white">{counts.en_preparation}</span>
+            <span className="text-amber-400 text-xl">🧹</span>
+          </div>
+        </div>
+
+        <div className="glass-card p-5 border-l-4 border-l-red-500">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Tâches Urgentes</p>
+          <div className="flex items-end justify-between">
+            <span className="text-3xl font-black text-white">{taskCounts.urgentes}</span>
+            <span className="text-red-400 text-xl">🚨</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Mini status bar for other statuses */}
+      <div className="flex flex-wrap gap-2">
+        {Object.entries(ROOM_STATUS).map(([key, val]) => {
+          if (['libre', 'occupe', 'en_preparation'].includes(key)) return null
+          return (
+            <div key={key} className="flex items-center gap-2 px-3 py-1.5 glass-card !rounded-full border-none bg-white/[0.03] text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: val.color }} />
+              {val.label}: <span className="text-white">{counts[key]}</span>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

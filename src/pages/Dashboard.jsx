@@ -16,6 +16,7 @@ export default function Dashboard() {
   const [connected, setConnected] = useState(true)
   const [selected, setSelected]   = useState(null)
   const [filters, setFilters]     = useState({ search: '', status: 'all', floor: 'all', roomType: 'all' })
+  const lastSync = localStorage.getItem('last_booking_sync')
 
   const fetchRooms = useCallback(async () => {
     const { data, error } = await supabase
@@ -112,6 +113,13 @@ export default function Dashboard() {
           <p className="text-slate-400 text-sm mt-0.5 capitalize">{today}</p>
         </div>
         <div className="flex items-center gap-3">
+          {/* Last sync info */}
+          {lastSync && (
+            <div className="hidden lg:flex flex-col items-end mr-2">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">Dernier Sync</span>
+              <span className="text-xs text-indigo-400 font-medium">{new Date(lastSync).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+          )}
           {/* Connection indicator */}
           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${
             connected

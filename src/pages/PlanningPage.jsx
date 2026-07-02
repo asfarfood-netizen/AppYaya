@@ -19,6 +19,9 @@ export default function PlanningPage() {
   const [syncing, setSyncing] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState('grid'); // 'grid' or 'list'
+  const [search, setSearch] = useState('');
+  const [selectedBooking, setSelectedBooking] = useState(null);
+  const [lastSync, setLastSync] = useState(localStorage.getItem('last_booking_sync'));
 
   const fetchRooms = useCallback(async () => {
     const { data } = await supabase.from('rooms').select('number, floor').order('number');
@@ -60,6 +63,7 @@ export default function PlanningPage() {
     try {
       await syncAllBookings();
       await fetchBookings();
+      setLastSync(new Date().toISOString());
     } catch (e) {
       alert('Erreur: ' + e.message);
     } finally {
@@ -84,13 +88,31 @@ export default function PlanningPage() {
             <Calendar className="text-indigo-400" />
             Planning des Réservations
           </h1>
-          <p className="text-slate-400 text-sm mt-0.5 capitalize">
-            {format(currentDate, 'MMMM yyyy', { locale: fr })}
-          </p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-slate-400 text-sm capitalize">
+              {format(currentDate, 'MMMM yyyy', { locale: fr })}
+            </p>
+            {lastSync && (
+              <span className="text-[10px] text-slate-500 font-medium">
+                • Sync: {format(new Date(lastSync), 'HH:mm', { locale: fr })}
+              </span>
+            )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="flex bg-white/5 rounded-xl p-1 border border-white/10 mr-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative group">
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors" size={14} />
+            <input
+              type="text"
+              placeholder="Rechercher client..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all w-48 md:w-64"
+            />
+          </div>
+
+          <div className="flex bg-white/5 rounded-xl p-1 border border-white/10">
             <button
               onClick={() => setView('grid')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${view === 'grid' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
@@ -171,34 +193,43 @@ export default function PlanningPage() {
               <tbody>
                 {rooms.map(room => (
                   <tr key={room.number} className="border-b border-white/5 group hover:bg-white/2 transition-colors">
-                    <td className="sticky left-0 z-10 p-4 bg-[#0d1117] border-r border-white/10 font-black text-white text-sm group-hover:bg-[#161b22]">
+                    <td className="sticky left-0 z-10 p-4 bg-[#0d1117] border-r border-white/10 font-black text-white text-sm group-hover:bg-[#161b22] shadow-[4px_0_8px_-4px_rgba(0,0,0,0.5)]">
                       {room.number}
                     </td>
                     {days.map(day => {
                       const booking = getBookingForRoomAndDay(room.number, day);
                       const isStart = booking && isSameDay(new Date(booking.check_in), day);
+                      const isMatch = search && booking?.guest_name.toLowerCase().includes(search.toLowerCase());
+                      const isSelected = selectedBooking?.id === booking?.id;
 
                       return (
                         <td
                           key={day.toISOString()}
-                          className={`relative p-0 border-r border-white/5 h-12 min-w-[40px] ${isToday(day) ? 'bg-indigo-500/5' : ''}`}
+                          className={`relative p-0 border-r border-white/5 h-12 min-w-[44px] ${isToday(day) ? 'bg-indigo-500/10' : ''}`}
                         >
+                          {isToday(day) && (
+                            <div className="absolute inset-y-0 left-1/2 w-[2px] bg-indigo-500/30 z-10 pointer-events-none" />
+                          )}
                           {booking && (
-                            <div
-                              className={`absolute inset-y-1 left-0 right-0 z-0 flex items-center px-1 overflow-hidden
-                                ${booking.season.includes('ETE') ? 'bg-indigo-600/60 border-indigo-500' : 'bg-blue-600/60 border-blue-500'}
+                            <button
+                              onClick={() => setSelectedBooking(booking)}
+                              className={`absolute inset-y-1.5 left-0 right-0 z-0 flex items-center px-1.5 overflow-hidden transition-all
+                                ${booking.season.includes('ETE')
+                                  ? 'bg-indigo-600/80 border-indigo-500'
+                                  : 'bg-blue-600/80 border-blue-500'}
                                 ${isStart ? 'rounded-l-lg border-l-2 ml-1' : ''}
                                 ${isSameDay(addDays(new Date(booking.check_out), -1), day) ? 'rounded-r-lg border-r-2 mr-1' : ''}
-                                border-t border-b cursor-help transition-all hover:brightness-125
+                                ${isMatch ? 'ring-2 ring-white ring-inset brightness-125 z-20 shadow-lg shadow-white/20' : ''}
+                                ${isSelected ? 'brightness-150 scale-y-105 z-20 ring-1 ring-white/50' : 'hover:brightness-110'}
+                                border-t border-b text-left
                               `}
-                              title={`${booking.guest_name} (${booking.check_in} -> ${booking.check_out})`}
                             >
                               {isStart && (
                                 <span className="text-[10px] font-bold text-white uppercase whitespace-nowrap overflow-hidden">
                                   {booking.guest_name}
                                 </span>
                               )}
-                            </div>
+                            </button>
                           )}
                         </td>
                       );
@@ -227,16 +258,24 @@ export default function PlanningPage() {
               </thead>
               <tbody className="divide-y divide-white/5">
                 {bookings
-                  .filter(b => isWithinInterval(new Date(b.check_in), {
-                    start: startOfMonth(currentDate),
-                    end: endOfMonth(currentDate)
-                  }) || isWithinInterval(new Date(b.check_out), {
-                    start: startOfMonth(currentDate),
-                    end: endOfMonth(currentDate)
-                  }))
+                  .filter(b => {
+                    const matchesSearch = !search || b.guest_name.toLowerCase().includes(search.toLowerCase());
+                    const isInMonth = isWithinInterval(new Date(b.check_in), {
+                      start: startOfMonth(currentDate),
+                      end: endOfMonth(currentDate)
+                    }) || isWithinInterval(new Date(b.check_out), {
+                      start: startOfMonth(currentDate),
+                      end: endOfMonth(currentDate)
+                    });
+                    return matchesSearch && isInMonth;
+                  })
                   .sort((a,b) => new Date(a.check_in) - new Date(b.check_in))
                   .map(booking => (
-                    <tr key={booking.id} className="hover:bg-white/5 transition-colors">
+                    <tr
+                      key={booking.id}
+                      className="hover:bg-white/5 transition-colors cursor-pointer"
+                      onClick={() => setSelectedBooking(booking)}
+                    >
                       <td className="p-4">
                         <div className="flex items-center gap-2">
                           <Users size={14} className="text-indigo-400" />
@@ -255,6 +294,63 @@ export default function PlanningPage() {
                   ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Booking Detail Modal */}
+      {selectedBooking && (
+        <div className="modal-overlay" onClick={() => setSelectedBooking(null)}>
+          <div className="modal-box !max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-black text-white uppercase tracking-tight">Détails Réservation</h2>
+              <button onClick={() => setSelectedBooking(null)} className="p-2 hover:bg-white/5 rounded-xl transition-colors">
+                <X size={20} className="text-slate-500" />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Client</p>
+                <p className="text-lg font-black text-white uppercase">{selectedBooking.guest_name}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Chambre</p>
+                  <p className="text-lg font-black text-white">{selectedBooking.room_number}</p>
+                </div>
+                <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Personnes</p>
+                  <p className="text-lg font-black text-white">{selectedBooking.persons || '—'}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+                  <p className="text-[10px] text-emerald-500 font-bold uppercase tracking-widest mb-1">Arrivée</p>
+                  <p className="text-sm font-bold text-white">{format(new Date(selectedBooking.check_in), 'dd MMMM yyyy', { locale: fr })}</p>
+                </div>
+                <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+                  <p className="text-[10px] text-red-500 font-bold uppercase tracking-widest mb-1">Départ</p>
+                  <p className="text-sm font-bold text-white">{format(new Date(selectedBooking.check_out), 'dd MMMM yyyy', { locale: fr })}</p>
+                </div>
+              </div>
+
+              {selectedBooking.notes && (
+                <div className="p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/20">
+                  <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest mb-1">Notes / Contact</p>
+                  <p className="text-sm text-slate-300 leading-relaxed">{selectedBooking.notes}</p>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/10">
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Saison</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full border ${selectedBooking.season.includes('ETE') ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30' : 'bg-blue-500/10 text-blue-400 border-blue-500/30'}`}>
+                  {selectedBooking.season}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -93,11 +93,11 @@ export default function App() {
     // Initial sync
     syncAllBookings().catch(console.error);
 
-    // Auto-sync every 5 minutes
+    // Auto-sync every 30 minutes (changed from 5 for performance, given manual sync is available)
     const interval = setInterval(() => {
-      console.log("[Auto-Sync] Triggering 5-minute sync...");
+      console.log("[Auto-Sync] Triggering sync...");
       syncAllBookings().catch(console.error);
-    }, 5 * 60 * 1000);
+    }, 30 * 60 * 1000);
 
     return () => clearInterval(interval);
   }, []);

@@ -111,12 +111,25 @@ export async function syncAllBookings() {
   }
 
   if (allBookings.length > 0) {
+    // Deduplicate in memory before upserting to avoid "ON CONFLICT DO UPDATE command cannot affect row a second time"
+    const uniqueBookings = [];
+    const seen = new Set();
+
+    for (const b of allBookings) {
+      const key = `${b.room_number}|${b.guest_name}|${b.check_in}|${b.check_out}`;
+      if (!seen.has(key)) {
+        uniqueBookings.push(b);
+        seen.add(key);
+      }
+    }
+
     const { error } = await supabase
       .from('bookings')
-      .upsert(allBookings, { onConflict: 'room_number, guest_name, check_in, check_out' });
+      .upsert(uniqueBookings, { onConflict: 'room_number, guest_name, check_in, check_out' });
 
     if (error) throw error;
+    return uniqueBookings.length;
   }
 
-  return allBookings.length;
+  return 0;
 }

@@ -51,8 +51,6 @@ async function fetchSheetData(sheetInfo) {
       }
 
       // Handle month transition when day is 1
-      // Check if dayVal is 1 AND we previously had a high day (like 28-31)
-      // or if it's just the first valid day we find (j > 1 check from previous code was a bit weak)
       if (dayVal === 1) {
           // Look back for the previous valid day
           let prevDay = null;
@@ -62,6 +60,7 @@ async function fetchSheetData(sheetInfo) {
                   break;
               }
           }
+          // If previous day was high (like 28-31), it's a new month
           if (prevDay !== null && prevDay > 20) {
               currentMonth++;
               if (currentMonth > 12) {
@@ -99,8 +98,31 @@ async function fetchSheetData(sheetInfo) {
         if (cellValue && cellValue.toString().trim().length > 0) {
           const valStr = cellValue.toString().trim();
 
+          // Handle Guest Transitions in a single cell (e.g. "NAME1 / NAME2")
+          if (valStr.includes(' / ')) {
+              const parts = valStr.split(' / ').map(p => p.trim());
+              const nameLeft = parts[0];
+              const nameRight = parts[1];
+
+              // Finalize previous guest if they match the left side of the split
+              if (activeBooking) {
+                  activeBooking.checkOut = currentDate;
+                  bookings.push(finalizeBooking(activeBooking, roomNumber, sheetInfo.name));
+                  activeBooking = null;
+              }
+
+              // Start new guest from today
+              activeBooking = {
+                  guestName: nameRight,
+                  raw: nameRight,
+                  checkIn: currentDate,
+                  checkOut: null
+              };
+              continue;
+          }
+
           // If the cell value is different from the active booking's raw value,
-          // it means a new guest has arrived.
+          // it means a new guest has arrived (standard transition).
           if (activeBooking && valStr !== activeBooking.raw) {
             activeBooking.checkOut = currentDate;
             bookings.push(finalizeBooking(activeBooking, roomNumber, sheetInfo.name));
@@ -151,8 +173,8 @@ function finalizeBooking(b, room, season) {
   let checkIn = new Date(b.checkIn);
   let checkOut = new Date(b.checkOut);
 
-  // 1. Extract and fix arrival/departure dates if mentioned in name (e.g. ">9/4" or "15/6<")
-  // Handle various formats like >9/4, >09/04, >9/4/26
+  // Extract Markers first as they are most specific
+  // 1. Arrival/Departure markers: >DD/MM or DD/MM<
   const arrivalMatch = name.match(/>(\d{1,2})\/(\d{1,2})(\/(\d{2,4}))?/);
   if (arrivalMatch) {
     const d = parseInt(arrivalMatch[1]);
@@ -160,11 +182,7 @@ function finalizeBooking(b, room, season) {
     const yStr = arrivalMatch[4];
     const year = yStr ? (yStr.length === 2 ? 2000 + parseInt(yStr) : parseInt(yStr)) : checkIn.getFullYear();
     const parsedArrival = new Date(year, m - 1, d);
-    if (!isNaN(parsedArrival)) {
-        checkIn = parsedArrival;
-        // If the parsed date is before the original start of the sheet month,
-        // it might be from the previous year or just a correction.
-    }
+    if (!isNaN(parsedArrival)) checkIn = parsedArrival;
     name = name.replace(arrivalMatch[0], '').trim();
   }
 
@@ -179,24 +197,20 @@ function finalizeBooking(b, room, season) {
     name = name.replace(departureMatch[0], '').trim();
   }
 
-  // 2. Handle transitions like "GUEST1 / GUEST2"
-  name = name.replace(/^[\s/]+|[\s/]+$/g, '');
-
-  // 3. Extract persons (patterns like "2P", "2 pers", "2+1", "2+bb")
+  // 2. Extract persons count (e.g., 2P, 2+1, 2 pers)
   const personMatch = name.match(/(\d\s?\+\s?\d|\d+)\s?(P|personnes|pers|pax|bb)?$/i);
   if (personMatch) {
     persons = personMatch[1].replace(/\s/g, '');
     name = name.replace(personMatch[0], '').trim();
   }
 
-  // 4. Extract contact info (email, phone)
+  // 3. Extract contact info (email, phone)
   const emailMatch = name.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g);
   if (emailMatch) {
     notes.push(...emailMatch);
     emailMatch.forEach(e => name = name.replace(e, ''));
   }
 
-  // Improved phone regex
   const phoneMatch = name.match(/(\+?\d{1,3}[\s.-]?)?(\d{2,4}[\s.-]?){2,4}\d{2,4}/g);
   if (phoneMatch) {
     const validPhones = phoneMatch.filter(p => p.replace(/\D/g, '').length >= 8);
@@ -204,20 +218,21 @@ function finalizeBooking(b, room, season) {
     validPhones.forEach(p => name = name.replace(p, ''));
   }
 
-  // 5. Cleanup remaining debris
+  // 4. Cleanup remaining markers and debris
   name = name.replace(/sp le\s?\d{1,2}\/\d{1,2}(\/\d{2,4})?/gi, (match) => {
     notes.push(match);
     return '';
   });
 
-  // Clean markers like >309 or <402 which refer to other rooms
   name = name.replace(/[<>]\d{3,4}/g, (match) => {
       notes.push("Ref: " + match);
       return '';
   });
 
+  // Clean common noise
   name = name.replace(/[,;/-]+$/, '').replace(/^[,;/-]+/, '').trim();
-  if (!name || name === "/" || name.toUpperCase() === "C" || name.toUpperCase() === "NC") name = "CLIENT";
+  const upperName = name.toUpperCase();
+  if (!name || name === "/" || upperName === "C" || upperName === "NC" || upperName === "RDC") name = "CLIENT";
 
   return {
     room_number: room,

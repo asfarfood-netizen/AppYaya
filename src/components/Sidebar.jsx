@@ -2,9 +2,10 @@ import React from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, CheckSquare, Users, ScrollText, BarChart3,
-  LogOut, Menu, X, Wifi, Calendar
+  LogOut, Menu, X, Wifi, Calendar, Palette
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { useTheme } from '../contexts/ThemeContext'
 import { ROLE_LABELS } from '../constants'
 const NAV_ITEMS = [
   { path: '/',          icon: LayoutDashboard, label: 'Dashboard',    roles: ['admin','reception','gouvernante','entretien'] },
@@ -16,6 +17,7 @@ const NAV_ITEMS = [
 ]
 export default function Sidebar({ open, onToggle }) {
   const { profile, signOut } = useAuth()
+  const { currentTheme, setTheme, themes } = useTheme()
   const navigate   = useNavigate()
   const { pathname } = useLocation()
   const role     = profile?.role || 'reception'
@@ -37,10 +39,10 @@ export default function Sidebar({ open, onToggle }) {
       {/* Sidebar */}
       <aside className={`
         fixed top-0 left-0 h-full z-40
-        w-64 bg-[#0d1117] border-r border-white/10
+        w-64 border-r border-white/10
         flex flex-col transition-transform duration-300
         ${open ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-      `}>
+      `} style={{ backgroundColor: 'var(--bg-sidebar)' }}>
         {/* Logo */}
         <div className="p-6 border-b border-white/5">
           <div className="flex items-center justify-between">
@@ -90,6 +92,26 @@ export default function Sidebar({ open, onToggle }) {
             )
           })}
         </nav>
+        {/* Theme Selector */}
+        <div className="px-6 py-4 border-t border-white/5">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+            <Palette size={12} />
+            Thème
+          </p>
+          <div className="flex items-center gap-3">
+            {Object.entries(themes).map(([key, theme]) => (
+              <button
+                key={key}
+                onClick={() => setTheme(key)}
+                className={`w-6 h-6 rounded-full border-2 transition-all ${
+                  currentTheme === key ? 'border-indigo-500 scale-110 shadow-lg shadow-indigo-500/20' : 'border-white/10 hover:border-white/30'
+                }`}
+                style={{ backgroundColor: theme.bg }}
+                title={theme.label}
+              />
+            ))}
+          </div>
+        </div>
         {/* Sign out */}
         <div className="p-3 border-t border-white/10">
           <button

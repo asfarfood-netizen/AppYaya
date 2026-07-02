@@ -3,10 +3,35 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --bg-main: #0b0d11;
+    --bg-sidebar: #0d1117;
+    --bg-sticky: #0d1117;
+  }
+
+  [data-theme='midnight'] {
+    --bg-main: #0f172a;
+    --bg-sidebar: #1e293b;
+    --bg-sticky: #1e293b;
+  }
+
+  [data-theme='forest'] {
+    --bg-main: #061a14;
+    --bg-sidebar: #0a261e;
+    --bg-sticky: #0a261e;
+  }
+
+  [data-theme='slate'] {
+    --bg-main: #1a1a1a;
+    --bg-sidebar: #262626;
+    --bg-sticky: #262626;
+  }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: 'Inter', system-ui, sans-serif;
-    @apply bg-[#0b0d11] text-slate-200 antialiased;
+    background-color: var(--bg-main);
+    @apply text-slate-200 antialiased;
     background-image:
       radial-gradient(at 0% 0%, rgba(79, 70, 229, 0.08) 0px, transparent 50%),
       radial-gradient(at 100% 100%, rgba(168, 85, 247, 0.08) 0px, transparent 50%);
@@ -125,7 +150,8 @@
     box-shadow: 0 0 15px -2px currentColor;
   }
   .sticky-col {
-    @apply sticky left-0 z-40 bg-[#0d1117] border-r border-white/10 shadow-[4px_0_12px_rgba(0,0,0,0.4)];
+    @apply sticky left-0 z-40 border-r border-white/10 shadow-[4px_0_12px_rgba(0,0,0,0.4)];
+    background-color: var(--bg-sticky);
   }
 }
 

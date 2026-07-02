@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { ThemeProvider } from './contexts/ThemeContext'
 import Sidebar from './components/Sidebar'
 import LoginPage from './pages/LoginPage'
 import Dashboard from './pages/Dashboard'
@@ -15,7 +16,7 @@ function RequireAuth({ children, roles = [] }) {
   const { user, profile, loading } = useAuth()
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0f1117] flex items-center justify-center text-slate-500">
+      <div className="min-h-screen bg-transparent flex items-center justify-center text-slate-500">
         <div className="w-8 h-8 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
       </div>
     )
@@ -31,7 +32,7 @@ function RequireAuth({ children, roles = [] }) {
 function MainLayout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   return (
-    <div className="min-h-screen bg-[#0f1117]">
+    <div className="min-h-screen">
       <Sidebar open={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} />
       
       {/* Main content area */}
@@ -103,10 +104,12 @@ export default function App() {
   }, []);
 
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </AuthProvider>
+    </ThemeProvider>
   )
 }

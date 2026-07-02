@@ -2,7 +2,7 @@ import React from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, CheckSquare, Users, ScrollText, BarChart3,
-  LogOut, Menu, X, Wifi
+  LogOut, Menu, X, Wifi, Calendar
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { ROLE_LABELS } from '../constants'

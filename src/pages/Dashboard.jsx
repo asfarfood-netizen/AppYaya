@@ -76,12 +76,6 @@ export default function Dashboard() {
     }
   }, [fetchRooms, fetchTasks, fetchCurrentBookings])
 
-  // Attach booking info to rooms
-  const roomsWithBookings = filteredRooms.map(r => {
-    const booking = bookings.find(b => b.room_number === r.number)
-    return { ...r, current_booking: booking }
-  })
-
   // Apply filters
   const filteredRooms = rooms.filter(r => {
     if (filters.search && !r.number.toLowerCase().includes(filters.search.toLowerCase()) && !r.notes?.toLowerCase().includes(filters.search.toLowerCase())) return false
@@ -89,6 +83,12 @@ export default function Dashboard() {
     if (filters.floor !== 'all' && r.floor !== filters.floor) return false
     if (filters.roomType !== 'all' && r.room_type !== filters.roomType) return false
     return true
+  })
+
+  // Attach booking info to rooms
+  const roomsWithBookings = filteredRooms.map(r => {
+    const booking = bookings.find(b => b.room_number === r.number)
+    return { ...r, current_booking: booking }
   })
 
   const today = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })

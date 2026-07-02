@@ -3,19 +3,132 @@ import { supabase } from '../supabaseClient';
 const SHEETS = [
   {
     name: 'ETE 2026',
+    id: '1rbNh01WA4nHJL0RZjI-TnFjt2WBt9GiWjcq_tGhmH48',
     url: 'https://docs.google.com/spreadsheets/d/1rbNh01WA4nHJL0RZjI-TnFjt2WBt9GiWjcq_tGhmH48/gviz/tq?tqx=out:json',
     startDate: new Date(2026, 4, 1) // May 1st 2026
   },
   {
     name: 'HIVER 2026/27',
+    id: '1qvv58oHR4Z8D9qp1TQJf7KS-wOG5GQizPx2VQWLeTPM',
     url: 'https://docs.google.com/spreadsheets/d/1qvv58oHR4Z8D9qp1TQJf7KS-wOG5GQizPx2VQWLeTPM/gviz/tq?tqx=out:json',
     startDate: new Date(2026, 10, 1) // Nov 1st 2026
   }
 ];
 
-const WEEKDAY_MAP = {
-  'L': 1, 'M': 2, 'M': 3, 'J': 4, 'V': 5, 'S': 6, 'D': 0
+const ROOM_ROW_FALLBACKS = {
+  'ETE 2026': [
+    '101G', '102G', '103', '104', '105', '106', '109',
+    '201G', '202G', '203', '204', '205', '206', '207', '208', '209', '210', '211', '212', '213', '214', '215', '216', 'A1',
+    '301G', '302', '303', '304', '305', '306', '307', '308', '309', '310', '311', '312', '313', '314', '315', '316', 'A2',
+    '401G', '402', '403', '404', '405', '406', '407', '408', '409', '410', '411', '412', '413', '414', '415', '416', 'A3',
+    '501', '502', '503', '504', '505', '506', '507', '508', '509', '510', '511', '512', '513', '514', '515', '516', 'A4',
+    '601', '602', '603', '604', '605', '606', '607', '608',
+    '1101', '1102', '1103G', '1202', '1203',
+    '1301G', '1302', '1303', '1304', '1305', '1306G',
+    '1401', '1402', '1403', '1404', '1405', '1406',
+    '1501', '1502', '1503', '1504', '1505', '1506',
+    '1601', '1602', '1603', '1604', '1605'
+  ],
+  'HIVER 2026/27': [
+    '101G', '102G', '103', '104', '105', '106', '109',
+    '201G', '202G', '203', '204', '205', '206', '207', '208', '209', '210', '211', '212', '213', '214', '215', '216', 'A1',
+    '301G', '302', '303', '304', '305', '306', '307', '308', '309', '310', '311', '312', '313', '314', '315', '316', 'A2',
+    '401G', '402', '403', '404', '405', '406', '407', '408', '409', '410', '411', '412', '413', '414', '415', '416', 'A3',
+    '501', '502', '503', '504', '505', '506', '507', '508', '509', '510', '511', '512', '513', '514', '515', 'A4',
+    '601', '602', '603', '604', '605', '606', '607', '608',
+    '1101', '1102', '1103G', '1202', '1203',
+    '1301', '1302', '1303', '1304', '1305', '1306G',
+    '1401G', '1402', '1403', '1404', '1405', '1406',
+    '1501', '1502', '1503', '1504', '1505', '1506',
+    '1601', '1602', '1603', '1604', '1605'
+  ]
 };
+
+const DATE_ROW_SCORE_MIN = 8;
+
+function addDaysLocal(date, amount) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + amount);
+  return next;
+}
+
+function toIsoDate(date) {
+  const local = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  return local.toISOString().split('T')[0];
+}
+
+function cellText(cell) {
+  if (!cell) return '';
+  const value = cell.f ?? cell.v;
+  return value === null || value === undefined ? '' : value.toString().trim();
+}
+
+function parseDayNumber(cell) {
+  const value = cellText(cell);
+  if (!/^\d{1,2}$/.test(value)) return null;
+  const day = Number(value);
+  return day >= 1 && day <= 31 ? day : null;
+}
+
+function isRoomCode(value) {
+  return /^\d{3,4}G?$|^A\d+$/i.test(value);
+}
+
+function findDateRowIndex(rows) {
+  let best = { index: -1, score: 0 };
+  rows.forEach((row, index) => {
+    const score = (row.c || []).slice(1).reduce((count, cell) => count + (parseDayNumber(cell) ? 1 : 0), 0);
+    if (score > best.score) best = { index, score };
+  });
+  return best.score >= DATE_ROW_SCORE_MIN ? best.index : 0;
+}
+
+function buildDateMap(dateRow, seasonStart) {
+  const dateMap = [];
+  let cursor = new Date(seasonStart);
+
+  for (let j = 1; j < dateRow.length; j++) {
+    const dayNum = parseDayNumber(dateRow[j]);
+    if (!dayNum) continue;
+
+    let guard = 0;
+    while (cursor.getDate() !== dayNum && guard < 370) {
+      cursor = addDaysLocal(cursor, 1);
+      guard += 1;
+    }
+
+    if (guard < 370) {
+      dateMap[j] = new Date(cursor);
+      cursor = addDaysLocal(cursor, 1);
+    }
+  }
+
+  return dateMap;
+}
+
+function resolveRoomForRow(row, roomOrder, cursor) {
+  const explicitRoom = cellText(row.c?.[0]);
+  if (isRoomCode(explicitRoom)) {
+    const room = explicitRoom.toUpperCase();
+    const explicitIndex = roomOrder.indexOf(room);
+    return {
+      room,
+      nextCursor: explicitIndex >= 0 ? explicitIndex + 1 : cursor + 1
+    };
+  }
+
+  return {
+    room: roomOrder[cursor] || null,
+    nextCursor: cursor + 1
+  };
+}
+
+function sameGuestPrefix(activeName, nextName) {
+  const normalize = (value) => value.toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+  const active = normalize(activeName);
+  const next = normalize(nextName);
+  return active && next && (active.startsWith(next) || next.startsWith(active));
+}
 
 /**
  * Parses the Google Sheets JSON and extracts bookings.
@@ -33,79 +146,53 @@ async function fetchSheetData(sheetInfo) {
     const rows = data.table.rows;
     if (!rows || rows.length === 0) return [];
 
-    const dateMap = [];
-    const dayNameRow = rows[0].c;
-    const dayNumRow = rows[1].c;
-
-    let currentDate = new Date(sheetInfo.startDate);
-
-    // Build the date map robustly
-    for (let j = 1; j < dayNameRow.length; j++) {
-      const dayLabel = dayNameRow[j]?.v?.toString().trim().toUpperCase();
-      const dayNum = parseInt(dayNumRow[j]?.v);
-
-      if (!dayLabel || isNaN(dayNum)) continue;
-
-      // If we encounter a gap or misalignment, we try to resync
-      // but assuming sequential columns is safer than the previous logic.
-      // We'll just increment from startDate and check if day number matches.
-      // If it's the first cell, we might need to adjust currentDate if startDate doesn't match dayNum.
-      if (dateMap.filter(d => d).length === 0) {
-          while (currentDate.getDate() !== dayNum) {
-              currentDate.setDate(currentDate.getDate() + 1);
-          }
-      } else {
-          currentDate = new Date(currentDate);
-          currentDate.setDate(currentDate.getDate() + 1);
-      }
-
-      dateMap[j] = new Date(currentDate);
-    }
+    const dateRowIndex = findDateRowIndex(rows);
+    const dateMap = buildDateMap(rows[dateRowIndex].c || [], sheetInfo.startDate);
+    const lastMappedDate = [...dateMap].reverse().find(Boolean);
 
     const bookings = [];
+    const roomOrder = ROOM_ROW_FALLBACKS[sheetInfo.name] || [];
+    let roomCursor = 0;
 
     // Process each room row
-    for (let i = 1; i < rows.length; i++) {
+    for (let i = dateRowIndex + 1; i < rows.length; i++) {
       const rowCells = rows[i].c;
-      if (!rowCells || !rowCells[0]?.v) continue;
+      if (!rowCells) continue;
 
-      const roomNumber = rowCells[0].v.toString().trim();
-      // Skip headers or special rows (if room number is not a number and doesn't look like one)
-      if (isNaN(parseInt(roomNumber)) && !roomNumber.toLowerCase().includes('annexe')) continue;
+      const resolvedRoom = resolveRoomForRow(rows[i], roomOrder, roomCursor);
+      roomCursor = resolvedRoom.nextCursor;
+      const roomNumber = resolvedRoom.room;
+      if (!roomNumber) continue;
 
       let activeBooking = null;
 
-      for (let j = 1; j < rowCells.length; j++) {
+      for (let j = 1; j < dateMap.length; j++) {
         const cell = rowCells[j];
-        const cellValue = cell?.v;
+        const cellValue = cellText(cell);
         const currentDate = dateMap[j];
 
         if (!currentDate) continue;
 
-        if (cellValue && cellValue.toString().trim().length > 0) {
-          const valStr = cellValue.toString().trim();
+        if (cellValue) {
+          const valStr = cellValue;
 
           // Handle Guest Transitions in a single cell (e.g. "NAME1 / NAME2")
-          if (valStr.includes(' / ')) {
-              const parts = valStr.split(' / ').map(p => p.trim());
+          if (activeBooking && valStr.includes(' / ')) {
+              const parts = valStr.split(' / ').map(p => p.trim()).filter(Boolean);
               const nameLeft = parts[0];
-              const nameRight = parts[1];
+              const nameRight = parts.slice(1).join(' / ');
 
-              // Finalize previous guest if they match the left side of the split
-              if (activeBooking) {
+              if (nameLeft && nameRight && sameGuestPrefix(activeBooking.raw, nameLeft)) {
                   activeBooking.checkOut = currentDate;
                   bookings.push(finalizeBooking(activeBooking, roomNumber, sheetInfo.name));
-                  activeBooking = null;
-              }
-
-              // Start new guest from today
-              activeBooking = {
-                  guestName: nameRight,
-                  raw: nameRight,
-                  checkIn: currentDate,
-                  checkOut: null
-              };
-              continue;
+                  activeBooking = {
+                      guestName: nameRight,
+                      raw: nameRight,
+                      checkIn: currentDate,
+                      checkOut: null
+                  };
+                  continue;
+                }
           }
 
           // If the cell value is different from the active booking's raw value,
@@ -124,20 +211,13 @@ async function fetchSheetData(sheetInfo) {
               checkOut: null
             };
           }
-        } else if (!cellValue && activeBooking) {
-          // Empty cell means the previous booking ended
-          activeBooking.checkOut = currentDate;
-          bookings.push(finalizeBooking(activeBooking, roomNumber, sheetInfo.name));
-          activeBooking = null;
         }
       }
 
       // Handle booking that goes until the end of the sheet
       if (activeBooking) {
-        let lastDate = [...dateMap].reverse().find(d => d);
-        if (lastDate) {
-          activeBooking.checkOut = new Date(lastDate);
-          activeBooking.checkOut.setDate(activeBooking.checkOut.getDate() + 1);
+        if (lastMappedDate) {
+          activeBooking.checkOut = addDaysLocal(lastMappedDate, 1);
           bookings.push(finalizeBooking(activeBooking, roomNumber, sheetInfo.name));
         }
       }
@@ -169,7 +249,7 @@ function finalizeBooking(b, room, season) {
     const yStr = arrivalMatch[4];
     const year = yStr ? (yStr.length === 2 ? 2000 + parseInt(yStr) : parseInt(yStr)) : checkIn.getFullYear();
     const parsedArrival = new Date(year, m - 1, d);
-    if (!isNaN(parsedArrival)) checkIn = parsedArrival;
+    if (!isNaN(parsedArrival.getTime())) checkIn = parsedArrival;
     name = name.replace(arrivalMatch[0], '').trim();
   }
 
@@ -180,12 +260,12 @@ function finalizeBooking(b, room, season) {
     const yStr = departureMatch[4];
     const year = yStr ? (yStr.length === 2 ? 2000 + parseInt(yStr) : parseInt(yStr)) : checkOut.getFullYear();
     const parsedDeparture = new Date(year, m - 1, d);
-    if (!isNaN(parsedDeparture)) checkOut = parsedDeparture;
+    if (!isNaN(parsedDeparture.getTime())) checkOut = parsedDeparture;
     name = name.replace(departureMatch[0], '').trim();
   }
 
-  // 2. Extract persons count (e.g., 2P, 2+1, 2 pers)
-  const personMatch = name.match(/(\d\s?\+\s?\d|\d+)\s?(P|personnes|pers|pax|bb)?$/i);
+  // 2. Extract persons count (e.g., 2P, 2+1, 2 pers, 2+bb)
+  const personMatch = name.match(/(\d+\s?\+\s?(?:\d+|bb)|\d+\s?\+\s?\d+|\d+)\s?(P|personnes|pers|pax)?$/i);
   if (personMatch) {
     persons = personMatch[1].replace(/\s/g, '');
     name = name.replace(personMatch[0], '').trim();
@@ -217,15 +297,24 @@ function finalizeBooking(b, room, season) {
   });
 
   // Clean common noise
-  name = name.replace(/[,;/-]+$/, '').replace(/^[,;/-]+/, '').trim();
+  name = name
+    .replace(/\b(TEL|PHONE|WHATSAPP)\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/[,;/-]+$/, '')
+    .replace(/^[,;/-]+/, '')
+    .trim();
   const upperName = name.toUpperCase();
   if (!name || name === "/" || upperName === "C" || upperName === "NC" || upperName === "RDC") name = "CLIENT";
+
+  if (checkOut <= checkIn) {
+    checkOut = addDaysLocal(checkIn, 1);
+  }
 
   return {
     room_number: room,
     guest_name: name.toUpperCase(),
-    check_in: checkIn.toISOString().split('T')[0],
-    check_out: checkOut.toISOString().split('T')[0],
+    check_in: toIsoDate(checkIn),
+    check_out: toIsoDate(checkOut),
     persons: persons,
     notes: notes.join(', ') || null,
     season: season

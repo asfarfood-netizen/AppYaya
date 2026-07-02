@@ -47,6 +47,35 @@ DROP TRIGGER IF EXISTS on_room_status_change_stats ON public.rooms;
 CREATE TRIGGER on_room_status_change_stats
   AFTER INSERT OR UPDATE OF status ON public.rooms
   FOR EACH ROW EXECUTE FUNCTION update_daily_stats();
+-- ============================================================
+-- TABLE: bookings (Réservations synchronisées)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.bookings (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  room_number TEXT NOT NULL,
+  guest_name TEXT NOT NULL,
+  check_in DATE NOT NULL,
+  check_out DATE NOT NULL,
+  persons TEXT,
+  notes TEXT,
+  season TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  -- Unique constraint to avoid duplicates on re-sync
+  UNIQUE(room_number, guest_name, check_in, check_out)
+);
+
+ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "bookings_select_all" ON public.bookings
+  FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "bookings_all_admin" ON public.bookings
+  FOR ALL USING (auth.role() = 'authenticated' AND (
+    SELECT role FROM public.profiles WHERE id = auth.uid()
+  ) IN ('admin', 'reception'));
+
+CREATE INDEX IF NOT EXISTS idx_bookings_room ON public.bookings(room_number);
+CREATE INDEX IF NOT EXISTS idx_bookings_dates ON public.bookings(check_in, check_out);
+
 -- Initialisation/backfill pour aujourd'hui
 INSERT INTO public.daily_stats (date, libre, occupee, en_preparation, maintenance)
 SELECT 

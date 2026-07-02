@@ -11,6 +11,7 @@ export default function Dashboard() {
   const { profile } = useAuth()
   const [rooms, setRooms]         = useState([])
   const [tasks, setTasks]         = useState([])
+  const [bookings, setBookings]   = useState([])
   const [loading, setLoading]     = useState(true)
   const [connected, setConnected] = useState(true)
   const [selected, setSelected]   = useState(null)
@@ -37,9 +38,20 @@ export default function Dashboard() {
     if (data) setTasks(data)
   }, [])
 
+  const fetchCurrentBookings = useCallback(async () => {
+    const today = new Date().toISOString().split('T')[0]
+    const { data } = await supabase
+      .from('bookings')
+      .select('*')
+      .lte('check_in', today)
+      .gt('check_out', today)
+    if (data) setBookings(data)
+  }, [])
+
   useEffect(() => {
     fetchRooms()
     fetchTasks()
+    fetchCurrentBookings()
 
     // Realtime subscriptions
     const roomSub = supabase
@@ -62,7 +74,13 @@ export default function Dashboard() {
       supabase.removeChannel(roomSub)
       supabase.removeChannel(taskSub)
     }
-  }, [fetchRooms, fetchTasks])
+  }, [fetchRooms, fetchTasks, fetchCurrentBookings])
+
+  // Attach booking info to rooms
+  const roomsWithBookings = filteredRooms.map(r => {
+    const booking = bookings.find(b => b.room_number === r.number)
+    return { ...r, current_booking: booking }
+  })
 
   // Apply filters
   const filteredRooms = rooms.filter(r => {
@@ -126,7 +144,7 @@ export default function Dashboard() {
           <p className="text-sm">Chargement des chambres...</p>
         </div>
       ) : (
-        <RoomGrid rooms={filteredRooms} onRoomClick={setSelected} />
+        <RoomGrid rooms={roomsWithBookings} onRoomClick={setSelected} />
       )}
 
       {/* Room modal */}

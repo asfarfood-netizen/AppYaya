@@ -77,6 +77,15 @@ export default function RoomCard({ room, onClick, compact = false }) {
         </p>
       )}
 
+      {/* Guest info from planning */}
+      {room.current_booking && (
+        <div className="mt-3 pt-2 border-t border-white/5">
+          <p className="text-[10px] font-bold text-indigo-400 uppercase truncate">
+            👤 {room.current_booking.guest_name}
+          </p>
+        </div>
+      )}
+
       {/* Hover glow */}
       <div
         className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"

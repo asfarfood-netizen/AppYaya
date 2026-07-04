@@ -1,7 +1,7 @@
 import { supabase } from '../supabaseClient';
 import { SEASONS_CONFIG } from '../constants';
 
-const DATE_ROW_SCORE_MIN = 8;
+const DATE_ROW_SCORE_MIN = 5; // Reduced slightly to be more inclusive
 
 function addDaysLocal(date, amount) {
   const next = new Date(date);
@@ -38,49 +38,62 @@ function sheetCellText(worksheet, rowIndex, colIndex) {
 
 function parseDayNumber(cell) {
   const value = cellText(cell);
-  if (!/^\d{1,2}$/.test(value)) return null;
-  const day = Number(value);
+  // Matches 1-31, potentially with leading zeros or followed by noise
+  const match = value.match(/^(\d{1,2})/);
+  if (!match) return null;
+  const day = Number(match[1]);
   return day >= 1 && day <= 31 ? day : null;
 }
 
 function isRoomCode(value) {
-  return /^\d{3,4}G?$|^A\d+$/i.test(value);
+  // More inclusive room code detection: 3-4 digits, optional G, or Annexe codes
+  return /^\d{3,4}G?$|^A\d+$/i.test(value.trim());
 }
 
 function findWorksheetDateRowIndex(worksheet, range) {
   let best = { index: range.s.r, score: 0 };
+  console.log(`[Sync] Searching for date row in range ${range.s.r} to ${Math.min(range.e.r, range.s.r + 15)}...`);
 
-  for (let row = range.s.r; row <= Math.min(range.e.r, range.s.r + 8); row++) {
+  for (let row = range.s.r; row <= Math.min(range.e.r, range.s.r + 15); row++) {
     let score = 0;
-    for (let col = 1; col <= range.e.c; col++) {
+    for (let col = range.s.c; col <= range.e.c; col++) {
       if (parseDayNumber({ v: sheetCellText(worksheet, row, col) })) score += 1;
     }
-    if (score > best.score) best = { index: row, score };
+    if (score > best.score) {
+      best = { index: row, score };
+    }
   }
 
-  return best.score >= DATE_ROW_SCORE_MIN ? best.index : range.s.r;
+  console.log(`[Sync] Best date row found at index ${best.index} with score ${best.score}`);
+  return best.index;
 }
 
 function buildDateMapFromWorksheet(worksheet, dateRowIndex, range, seasonStart) {
   const dateMap = [];
   let cursor = new Date(seasonStart);
+  console.log(`[Sync] Building date map starting from ${seasonStart.toDateString()}...`);
 
-  for (let col = 1; col <= range.e.c; col++) {
+  for (let col = range.s.c + 1; col <= range.e.c; col++) {
     const dayNum = parseDayNumber({ v: sheetCellText(worksheet, dateRowIndex, col) });
     if (!dayNum) continue;
 
     let guard = 0;
-    while (cursor.getDate() !== dayNum && guard < 370) {
+    while (cursor.getDate() !== dayNum && guard < 40) { // Look ahead up to 40 days
       cursor = addDaysLocal(cursor, 1);
       guard += 1;
     }
 
-    if (guard < 370) {
+    if (guard < 40) {
       dateMap[col] = new Date(cursor);
+      // Don't increment cursor here yet, as multiple columns might represent the same day (rare but possible in some layouts)
+      // or we might want to stay on this day for the next column check.
+      // Actually, standard layout is 1 column = 1 day.
       cursor = addDaysLocal(cursor, 1);
     }
   }
 
+  const mappedCount = dateMap.filter(Boolean).length;
+  console.log(`[Sync] Date map built: ${mappedCount} days mapped.`);
   return dateMap;
 }
 
@@ -93,13 +106,16 @@ function sameGuestPrefix(activeName, nextName) {
 
 function shouldSkipValue(value) {
   const text = value.trim().toUpperCase();
-  return !text || text === '/' || text === 'C' || text === 'NC' || text === 'RDC';
+  // Skip common non-guest markers
+  return !text || text === '/' || text === 'C' || text === 'NC' || text === 'RDC' || text === 'X' || text === '-';
 }
 
 function splitTransitionValue(activeBooking, value) {
   if (!activeBooking || !value.includes(' / ')) return null;
 
   const parts = value.split(' / ').map(p => p.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+
   const nameLeft = parts[0];
   const nameRight = parts.slice(1).join(' / ');
 
@@ -201,7 +217,15 @@ function finalizeBooking(b, room, season) {
 async function extractBookingsFromBuffer(buffer, seasonId) {
   const XLSX = await import('https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs');
   const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-  const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+
+  // Find a worksheet that looks like it has data
+  const sheetName = workbook.SheetNames.find(name => {
+    const ws = workbook.Sheets[name];
+    return ws['!ref'] && XLSX.utils.decode_range(ws['!ref']).e.r > 5;
+  }) || workbook.SheetNames[0];
+
+  console.log(`[Sync] Using sheet: ${sheetName}`);
+  const worksheet = workbook.Sheets[sheetName];
   const range = XLSX.utils.decode_range(worksheet['!ref']);
 
   const season = SEASONS_CONFIG.find(s => s.id === seasonId);
@@ -212,19 +236,29 @@ async function extractBookingsFromBuffer(buffer, seasonId) {
   const lastMappedDate = [...dateMap].reverse().find(Boolean);
 
   const bookings = [];
+  let foundRooms = 0;
 
   for (let row = dateRowIndex + 1; row <= range.e.r; row++) {
-    const roomNumber = sheetCellText(worksheet, row, 0).toUpperCase();
-    if (!isRoomCode(roomNumber)) continue;
+    const roomValue = sheetCellText(worksheet, row, 0);
+    if (!isRoomCode(roomValue)) continue;
 
+    const roomNumber = roomValue.trim().toUpperCase();
+    foundRooms++;
     let activeBooking = null;
 
-    for (let col = 1; col <= range.e.c; col++) {
+    for (let col = range.s.c + 1; col <= range.e.c; col++) {
       const currentDate = dateMap[col];
       if (!currentDate) continue;
 
       const value = sheetCellText(worksheet, row, col);
-      if (!value || shouldSkipValue(value)) continue;
+      if (!value || shouldSkipValue(value)) {
+        if (activeBooking) {
+          activeBooking.checkOut = currentDate;
+          bookings.push(finalizeBooking(activeBooking, roomNumber, seasonId));
+          activeBooking = null;
+        }
+        continue;
+      }
 
       const transitionGuest = splitTransitionValue(activeBooking, value);
       if (transitionGuest) {
@@ -242,10 +276,13 @@ async function extractBookingsFromBuffer(buffer, seasonId) {
       if (activeBooking && value !== activeBooking.raw) {
         activeBooking.checkOut = currentDate;
         bookings.push(finalizeBooking(activeBooking, roomNumber, seasonId));
-        activeBooking = null;
-      }
-
-      if (!activeBooking) {
+        activeBooking = {
+          guestName: value,
+          raw: value,
+          checkIn: currentDate,
+          checkOut: null
+        };
+      } else if (!activeBooking) {
         activeBooking = {
           guestName: value,
           raw: value,
@@ -261,6 +298,7 @@ async function extractBookingsFromBuffer(buffer, seasonId) {
     }
   }
 
+  console.log(`[Sync] Extraction complete: Found ${foundRooms} rooms, ${bookings.length} total bookings.`);
   return bookings;
 }
 
@@ -277,11 +315,12 @@ export async function syncBookingsFromExcel(file, seasonId) {
 
   isSyncInProgress = true;
   try {
+    console.log(`[Sync] Starting sync for file: ${file.name}, season: ${seasonId}`);
     const buffer = await file.arrayBuffer();
     const newData = await extractBookingsFromBuffer(buffer, seasonId);
 
     if (newData.length === 0) {
-      throw new Error("Aucune réservation trouvée dans le fichier.");
+      throw new Error("Aucune réservation trouvée. Vérifiez que le format du fichier Excel correspond (Numéro de chambre en colonne A, dates en ligne d'entête).");
     }
 
     // Get existing bookings for this season to identify deletions
@@ -300,7 +339,7 @@ export async function syncBookingsFromExcel(file, seasonId) {
     }
     const uniqueList = Array.from(uniqueMap.values());
 
-    // Upsert
+    console.log(`[Sync] Upserting ${uniqueList.length} unique bookings...`);
     const { error: upsertError } = await supabase
       .from('bookings')
       .upsert(uniqueList, { onConflict: 'room_number, guest_name, check_in, check_out' });
@@ -314,6 +353,7 @@ export async function syncBookingsFromExcel(file, seasonId) {
       .map(b => b.id);
 
     if (toDelete.length > 0) {
+      console.log(`[Sync] Deleting ${toDelete.length} obsolete bookings...`);
       const { error: deleteError } = await supabase
         .from('bookings')
         .delete()
@@ -327,6 +367,7 @@ export async function syncBookingsFromExcel(file, seasonId) {
     };
 
     localStorage.setItem('last_booking_sync', new Date().toISOString());
+    console.log(`[Sync] Success! Added: ${stats.added}, Deleted: ${stats.deleted}`);
     return stats;
   } catch (error) {
     console.error("[Sync] Critical error during sync:", error);

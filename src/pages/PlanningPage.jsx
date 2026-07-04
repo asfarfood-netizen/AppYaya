@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../supabaseClient';
+import { useAuth } from '../contexts/AuthContext';
 import { syncBookingsFromExcel } from '../services/bookingSync';
 import { SEASONS_CONFIG } from '../constants';
 import {
@@ -32,6 +33,7 @@ function nightsBetween(start, end) {
 }
 
 export default function PlanningPage() {
+  const { profile } = useAuth();
   const [bookings, setBookings] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);

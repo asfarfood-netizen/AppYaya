@@ -1,7 +1,7 @@
 import { supabase } from '../supabaseClient';
 import { SEASONS_CONFIG } from '../constants';
 
-const DATE_ROW_SCORE_MIN = 5; // Reduced slightly to be more inclusive
+const DATE_ROW_SCORE_MIN = 5;
 
 function addDaysLocal(date, amount) {
   const next = new Date(date);
@@ -38,7 +38,6 @@ function sheetCellText(worksheet, rowIndex, colIndex) {
 
 function parseDayNumber(cell) {
   const value = cellText(cell);
-  // Matches 1-31, potentially with leading zeros or followed by noise
   const match = value.match(/^(\d{1,2})/);
   if (!match) return null;
   const day = Number(match[1]);
@@ -46,15 +45,12 @@ function parseDayNumber(cell) {
 }
 
 function isRoomCode(value) {
-  // More inclusive room code detection: 3-4 digits, optional G, or Annexe codes
   return /^\d{3,4}G?$|^A\d+$/i.test(value.trim());
 }
 
 function findWorksheetDateRowIndex(worksheet, range) {
   let best = { index: range.s.r, score: 0 };
-  console.log(`[Sync] Searching for date row in range ${range.s.r} to ${Math.min(range.e.r, range.s.r + 15)}...`);
-
-  for (let row = range.s.r; row <= Math.min(range.e.r, range.s.r + 15); row++) {
+  for (let row = range.s.r; row <= Math.min(range.e.r, range.s.r + 20); row++) {
     let score = 0;
     for (let col = range.s.c; col <= range.e.c; col++) {
       if (parseDayNumber({ v: sheetCellText(worksheet, row, col) })) score += 1;
@@ -63,37 +59,28 @@ function findWorksheetDateRowIndex(worksheet, range) {
       best = { index: row, score };
     }
   }
-
-  console.log(`[Sync] Best date row found at index ${best.index} with score ${best.score}`);
   return best.index;
 }
 
 function buildDateMapFromWorksheet(worksheet, dateRowIndex, range, seasonStart) {
   const dateMap = [];
   let cursor = new Date(seasonStart);
-  console.log(`[Sync] Building date map starting from ${seasonStart.toDateString()}...`);
 
   for (let col = range.s.c + 1; col <= range.e.c; col++) {
     const dayNum = parseDayNumber({ v: sheetCellText(worksheet, dateRowIndex, col) });
     if (!dayNum) continue;
 
     let guard = 0;
-    while (cursor.getDate() !== dayNum && guard < 40) { // Look ahead up to 40 days
+    while (cursor.getDate() !== dayNum && guard < 40) {
       cursor = addDaysLocal(cursor, 1);
       guard += 1;
     }
 
     if (guard < 40) {
       dateMap[col] = new Date(cursor);
-      // Don't increment cursor here yet, as multiple columns might represent the same day (rare but possible in some layouts)
-      // or we might want to stay on this day for the next column check.
-      // Actually, standard layout is 1 column = 1 day.
       cursor = addDaysLocal(cursor, 1);
     }
   }
-
-  const mappedCount = dateMap.filter(Boolean).length;
-  console.log(`[Sync] Date map built: ${mappedCount} days mapped.`);
   return dateMap;
 }
 
@@ -106,29 +93,21 @@ function sameGuestPrefix(activeName, nextName) {
 
 function shouldSkipValue(value) {
   const text = value.trim().toUpperCase();
-  // Skip common non-guest markers
   return !text || text === '/' || text === 'C' || text === 'NC' || text === 'RDC' || text === 'X' || text === '-';
 }
 
 function splitTransitionValue(activeBooking, value) {
   if (!activeBooking || !value.includes(' / ')) return null;
-
   const parts = value.split(' / ').map(p => p.trim()).filter(Boolean);
   if (parts.length < 2) return null;
-
   const nameLeft = parts[0];
   const nameRight = parts.slice(1).join(' / ');
-
   if (nameLeft && nameRight && sameGuestPrefix(activeBooking.raw, nameLeft)) {
     return nameRight;
   }
-
   return null;
 }
 
-/**
- * Cleans up guest name and extracts persons/notes.
- */
 function finalizeBooking(b, room, season) {
   let name = b.guestName.toString();
   let persons = null;
@@ -187,12 +166,7 @@ function finalizeBooking(b, room, season) {
       return '';
   });
 
-  name = name
-    .replace(/\b(TEL|PHONE|WHATSAPP)\b/gi, '')
-    .replace(/\s{2,}/g, ' ')
-    .replace(/[,;/-]+$/, '')
-    .replace(/^[,;/-]+/, '')
-    .trim();
+  name = name.replace(/\b(TEL|PHONE|WHATSAPP)\b/gi, '').replace(/\s{2,}/g, ' ').replace(/[,;/-]+$/, '').replace(/^[,;/-]+/, '').trim();
   const upperName = name.toUpperCase();
   if (!name || name === "/" || upperName === "C" || upperName === "NC" || upperName === "RDC") name = "CLIENT";
 
@@ -211,166 +185,127 @@ function finalizeBooking(b, room, season) {
   };
 }
 
-/**
- * Extracts bookings from an Excel file (ArrayBuffer)
- */
 async function extractBookingsFromBuffer(buffer, seasonId) {
   const XLSX = await import('https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs');
   const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
 
-  // Find a worksheet that looks like it has data
-  const sheetName = workbook.SheetNames.find(name => {
-    const ws = workbook.Sheets[name];
-    return ws['!ref'] && XLSX.utils.decode_range(ws['!ref']).e.r > 5;
-  }) || workbook.SheetNames[0];
+  // Scans all sheets for a valid one
+  let allBookings = [];
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    if (!worksheet['!ref']) continue;
+    const range = XLSX.utils.decode_range(worksheet['!ref']);
+    if (range.e.r < 5) continue;
 
-  console.log(`[Sync] Using sheet: ${sheetName}`);
-  const worksheet = workbook.Sheets[sheetName];
-  const range = XLSX.utils.decode_range(worksheet['!ref']);
+    const season = SEASONS_CONFIG.find(s => s.id === seasonId);
+    if (!season) continue;
 
-  const season = SEASONS_CONFIG.find(s => s.id === seasonId);
-  if (!season) throw new Error("Saison non configurée: " + seasonId);
+    const dateRowIndex = findWorksheetDateRowIndex(worksheet, range);
+    const dateMap = buildDateMapFromWorksheet(worksheet, dateRowIndex, range, season.start);
+    const lastMappedDate = [...dateMap].reverse().find(Boolean);
 
-  const dateRowIndex = findWorksheetDateRowIndex(worksheet, range);
-  const dateMap = buildDateMapFromWorksheet(worksheet, dateRowIndex, range, season.start);
-  const lastMappedDate = [...dateMap].reverse().find(Boolean);
+    for (let row = dateRowIndex + 1; row <= range.e.r; row++) {
+      const roomValue = sheetCellText(worksheet, row, 0);
+      if (!isRoomCode(roomValue)) continue;
 
-  const bookings = [];
-  let foundRooms = 0;
+      const roomNumber = roomValue.trim().toUpperCase();
+      let activeBooking = null;
 
-  for (let row = dateRowIndex + 1; row <= range.e.r; row++) {
-    const roomValue = sheetCellText(worksheet, row, 0);
-    if (!isRoomCode(roomValue)) continue;
+      for (let col = range.s.c + 1; col <= range.e.c; col++) {
+        const currentDate = dateMap[col];
+        if (!currentDate) continue;
 
-    const roomNumber = roomValue.trim().toUpperCase();
-    foundRooms++;
-    let activeBooking = null;
-
-    for (let col = range.s.c + 1; col <= range.e.c; col++) {
-      const currentDate = dateMap[col];
-      if (!currentDate) continue;
-
-      const value = sheetCellText(worksheet, row, col);
-      if (!value || shouldSkipValue(value)) {
-        if (activeBooking) {
-          activeBooking.checkOut = currentDate;
-          bookings.push(finalizeBooking(activeBooking, roomNumber, seasonId));
-          activeBooking = null;
+        const value = sheetCellText(worksheet, row, col);
+        if (!value || shouldSkipValue(value)) {
+          if (activeBooking) {
+            activeBooking.checkOut = currentDate;
+            allBookings.push(finalizeBooking(activeBooking, roomNumber, seasonId));
+            activeBooking = null;
+          }
+          continue;
         }
-        continue;
+
+        const transitionGuest = splitTransitionValue(activeBooking, value);
+        if (transitionGuest) {
+          activeBooking.checkOut = currentDate;
+          allBookings.push(finalizeBooking(activeBooking, roomNumber, seasonId));
+          activeBooking = { guestName: transitionGuest, raw: transitionGuest, checkIn: currentDate, checkOut: null };
+          continue;
+        }
+
+        if (activeBooking && value !== activeBooking.raw) {
+          activeBooking.checkOut = currentDate;
+          allBookings.push(finalizeBooking(activeBooking, roomNumber, seasonId));
+          activeBooking = { guestName: value, raw: value, checkIn: currentDate, checkOut: null };
+        } else if (!activeBooking) {
+          activeBooking = { guestName: value, raw: value, checkIn: currentDate, checkOut: null };
+        }
       }
 
-      const transitionGuest = splitTransitionValue(activeBooking, value);
-      if (transitionGuest) {
-        activeBooking.checkOut = currentDate;
-        bookings.push(finalizeBooking(activeBooking, roomNumber, seasonId));
-        activeBooking = {
-          guestName: transitionGuest,
-          raw: transitionGuest,
-          checkIn: currentDate,
-          checkOut: null
-        };
-        continue;
+      if (activeBooking && lastMappedDate) {
+        activeBooking.checkOut = addDaysLocal(lastMappedDate, 1);
+        allBookings.push(finalizeBooking(activeBooking, roomNumber, seasonId));
       }
-
-      if (activeBooking && value !== activeBooking.raw) {
-        activeBooking.checkOut = currentDate;
-        bookings.push(finalizeBooking(activeBooking, roomNumber, seasonId));
-        activeBooking = {
-          guestName: value,
-          raw: value,
-          checkIn: currentDate,
-          checkOut: null
-        };
-      } else if (!activeBooking) {
-        activeBooking = {
-          guestName: value,
-          raw: value,
-          checkIn: currentDate,
-          checkOut: null
-        };
-      }
-    }
-
-    if (activeBooking && lastMappedDate) {
-      activeBooking.checkOut = addDaysLocal(lastMappedDate, 1);
-      bookings.push(finalizeBooking(activeBooking, roomNumber, seasonId));
     }
   }
 
-  console.log(`[Sync] Extraction complete: Found ${foundRooms} rooms, ${bookings.length} total bookings.`);
-  return bookings;
+  return allBookings;
 }
 
 let isSyncInProgress = false;
 
-/**
- * Main sync function for Excel upload.
- */
-export async function syncBookingsFromExcel(file, seasonId) {
-  if (isSyncInProgress) {
-    console.log("[Sync] Sync already in progress, skipping.");
-    return { added: 0, updated: 0, deleted: 0 };
-  }
-
+export async function syncBookingsFromFiles(files, onProgress) {
+  if (isSyncInProgress) return;
   isSyncInProgress = true;
+
   try {
-    console.log(`[Sync] Starting sync for file: ${file.name}, season: ${seasonId}`);
-    const buffer = await file.arrayBuffer();
-    const newData = await extractBookingsFromBuffer(buffer, seasonId);
+    let allNewData = [];
 
-    if (newData.length === 0) {
-      throw new Error("Aucune réservation trouvée. Vérifiez que le format du fichier Excel correspond (Numéro de chambre en colonne A, dates en ligne d'entête).");
-    }
+    // Step 1: Process Summer File
+    onProgress(10, "Lecture du fichier Été...");
+    const summerBuffer = await files.summer.file.arrayBuffer();
+    const summerData = await extractBookingsFromBuffer(summerBuffer, files.summer.seasonId);
+    allNewData.push(...summerData);
+    onProgress(30, `Extraction Été : ${summerData.length} réservations trouvées.`);
 
-    // Get existing bookings for this season to identify deletions
-    const { data: existingData, error: fetchError } = await supabase
-      .from('bookings')
-      .select('id, room_number, guest_name, check_in, check_out')
-      .eq('season', seasonId);
+    // Step 2: Process Winter File
+    onProgress(40, "Lecture du fichier Hiver...");
+    const winterBuffer = await files.winter.file.arrayBuffer();
+    const winterData = await extractBookingsFromBuffer(winterBuffer, files.winter.seasonId);
+    allNewData.push(...winterData);
+    onProgress(60, `Extraction Hiver : ${winterData.length} réservations trouvées.`);
 
-    if (fetchError) throw fetchError;
+    if (allNewData.length === 0) throw new Error("Aucune donnée trouvée.");
 
-    // Deduplicate new data
+    // Step 3: Database Update
+    onProgress(70, "Mise à jour de la base de données...");
+    const { data: existingData } = await supabase.from('bookings').select('id, room_number, guest_name, check_in, check_out, season');
+
     const uniqueMap = new Map();
-    for (const b of newData) {
-      const key = `${b.room_number}|${b.guest_name}|${b.check_in}|${b.check_out}`;
+    for (const b of allNewData) {
+      const key = `${b.room_number}|${b.guest_name}|${b.check_in}|${b.check_out}|${b.season}`;
       uniqueMap.set(key, b);
     }
     const uniqueList = Array.from(uniqueMap.values());
 
-    console.log(`[Sync] Upserting ${uniqueList.length} unique bookings...`);
-    const { error: upsertError } = await supabase
-      .from('bookings')
-      .upsert(uniqueList, { onConflict: 'room_number, guest_name, check_in, check_out' });
-
+    const { error: upsertError } = await supabase.from('bookings').upsert(uniqueList, { onConflict: 'room_number, guest_name, check_in, check_out, season' });
     if (upsertError) throw upsertError;
 
-    // Identify and delete records no longer in the file
-    const newKeys = new Set(uniqueList.map(b => `${b.room_number}|${b.guest_name}|${b.check_in}|${b.check_out}`));
+    onProgress(90, "Nettoyage des anciennes réservations...");
+    const newKeys = new Set(uniqueList.map(b => `${b.room_number}|${b.guest_name}|${b.check_in}|${b.check_out}|${b.season}`));
     const toDelete = existingData
-      .filter(b => !newKeys.has(`${b.room_number}|${b.guest_name}|${b.check_in}|${b.check_out}`))
+      .filter(b => !newKeys.has(`${b.room_number}|${b.guest_name}|${b.check_in}|${b.check_out}|${b.season}`))
       .map(b => b.id);
 
     if (toDelete.length > 0) {
-      console.log(`[Sync] Deleting ${toDelete.length} obsolete bookings...`);
-      const { error: deleteError } = await supabase
-        .from('bookings')
-        .delete()
-        .in('id', toDelete);
-      if (deleteError) console.error("[Sync] Error deleting obsolete records:", deleteError);
+      await supabase.from('bookings').delete().in('id', toDelete);
     }
 
-    const stats = {
-      added: uniqueList.length,
-      deleted: toDelete.length
-    };
-
+    onProgress(100, "Synchronisation réussie !");
     localStorage.setItem('last_booking_sync', new Date().toISOString());
-    console.log(`[Sync] Success! Added: ${stats.added}, Deleted: ${stats.deleted}`);
-    return stats;
+    return { added: uniqueList.length, deleted: toDelete.length };
   } catch (error) {
-    console.error("[Sync] Critical error during sync:", error);
+    onProgress(0, `Erreur: ${error.message}`);
     throw error;
   } finally {
     isSyncInProgress = false;

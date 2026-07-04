@@ -3,9 +3,11 @@ import { supabase } from '../supabaseClient'
 import { format, subDays } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { BarChart3, Calendar, CheckCircle2, Clock, Wrench } from 'lucide-react'
+
 export default function HistoryPage() {
   const [stats, setStats] = useState([])
   const [loading, setLoading] = useState(true)
+
   const fetchStats = useCallback(async () => {
     setLoading(true)
     const { data } = await supabase
@@ -17,6 +19,7 @@ export default function HistoryPage() {
     if (data) setStats(data)
     setLoading(false)
   }, [])
+
   useEffect(() => {
     fetchStats()
     const sub = supabase
@@ -25,8 +28,10 @@ export default function HistoryPage() {
         fetchStats()
       })
       .subscribe()
+
     return () => supabase.removeChannel(sub)
   }, [fetchStats])
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
@@ -39,6 +44,7 @@ export default function HistoryPage() {
           Évolution de l'occupation des chambres sur les 30 derniers jours
         </p>
       </div>
+
       <div className="glass-card overflow-hidden">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-24 text-slate-500">
@@ -68,6 +74,7 @@ export default function HistoryPage() {
                 {stats.map(row => {
                   const total = row.libre + row.occupee + row.en_preparation + row.maintenance
                   const occupancyRate = total > 0 ? Math.round((row.occupee / total) * 100) : 0
+
                   return (
                     <tr key={row.date} className="hover:bg-white/5 transition-colors">
                       <td className="p-4">

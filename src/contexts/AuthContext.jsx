@@ -40,9 +40,14 @@ export function AuthProvider({ children }) {
   }, [])
 
   async function signIn(email, password) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) throw error
-    return data
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) throw error
+      return data
+    } catch (error) {
+      console.error("[Auth] Login failed:", error.message)
+      throw error
+    }
   }
 
   async function signOut() {

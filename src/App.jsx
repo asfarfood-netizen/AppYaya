@@ -8,6 +8,7 @@ import TasksPage from './pages/TasksPage'
 import AdminPanel from './pages/AdminPanel'
 import LogsPage from './pages/LogsPage'
 import HistoryPage from './pages/HistoryPage'
+import PlanningPage from './pages/PlanningPage'
 
 function RequireAuth({ children, roles = [] }) {
   const { user, profile, loading } = useAuth()
@@ -69,6 +70,12 @@ function AppRoutes() {
       <Route path="/tasks" element={
         <RequireAuth>
           <MainLayout><TasksPage /></MainLayout>
+        </RequireAuth>
+      } />
+
+      <Route path="/planning" element={
+        <RequireAuth roles={['admin', 'reception']}>
+          <MainLayout><PlanningPage /></MainLayout>
         </RequireAuth>
       } />
 

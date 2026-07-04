@@ -2,7 +2,7 @@ import React from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, CheckSquare, Users, ScrollText, BarChart3,
-  LogOut, Menu, X, Wifi
+  LogOut, Menu, X, Wifi, Calendar
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { ROLE_LABELS } from '../constants'
@@ -10,6 +10,7 @@ import { ROLE_LABELS } from '../constants'
 const NAV_ITEMS = [
   { path: '/',          icon: LayoutDashboard, label: 'Dashboard',    roles: ['admin','reception','gouvernante','entretien'] },
   { path: '/tasks',     icon: CheckSquare,     label: 'Tâches',       roles: ['admin','reception','gouvernante','entretien'] },
+  { path: '/planning',  icon: Calendar,        label: 'Planning',     roles: ['admin','reception'] },
   { path: '/history',   icon: BarChart3,       label: 'Statistiques', roles: ['admin','reception'] },
   { path: '/admin',     icon: Users,           label: 'Admin',        roles: ['admin'] },
   { path: '/logs',      icon: ScrollText,      label: 'Historique',   roles: ['admin'] },

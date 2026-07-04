@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../supabaseClient';
-import { syncAllBookings } from '../services/bookingSync';
+import { syncBookingsFromExcel } from '../services/bookingSync';
 import { SEASONS_CONFIG } from '../constants';
 import {
   Calendar, RefreshCw, Users, BedDouble, FileText, X, Search,
@@ -42,6 +42,9 @@ export default function PlanningPage() {
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [lastSync, setLastSync] = useState(localStorage.getItem('last_booking_sync'));
   const scrollContainerRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  const isAdmin = profile?.role === 'admin';
 
   const currentSeason = useMemo(
     () => SEASONS_CONFIG.find((season) => season.id === currentSeasonId),
@@ -159,18 +162,23 @@ export default function PlanningPage() {
     };
   }, [seasonBookings, roomRows, rooms.length, days.length]);
 
-  async function handleSync() {
+  async function handleSync(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
     setSyncing(true);
     try {
-      await syncAllBookings();
+      const stats = await syncBookingsFromExcel(file, currentSeasonId);
       await fetchBookings();
       const now = new Date().toISOString();
       setLastSync(now);
       localStorage.setItem('last_booking_sync', now);
+      alert(`Synchronisation terminée : ${stats.added} ajoutés/mis à jour, ${stats.deleted} supprimés.`);
     } catch (e) {
       alert('Erreur: ' + e.message);
     } finally {
       setSyncing(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   }
 
@@ -316,10 +324,25 @@ export default function PlanningPage() {
             </button>
           </div>
 
-          <button onClick={handleSync} disabled={syncing} className="btn-primary !h-11 !rounded-lg !bg-cyan-500 !px-4 !py-0 !text-xs !text-slate-950 hover:!bg-cyan-400">
-            <RefreshCw size={15} className={syncing ? 'animate-spin' : ''} />
-            {syncing ? 'Sync...' : 'Sync Excel'}
-          </button>
+          {isAdmin && (
+            <>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleSync}
+                accept=".xlsx,.xls"
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={syncing}
+                className="btn-primary !h-11 !rounded-lg !bg-cyan-500 !px-4 !py-0 !text-xs !text-slate-950 hover:!bg-cyan-400"
+              >
+                <RefreshCw size={15} className={syncing ? 'animate-spin' : ''} />
+                {syncing ? 'Sync...' : 'Sync Excel'}
+              </button>
+            </>
+          )}
         </div>
       </div>
 

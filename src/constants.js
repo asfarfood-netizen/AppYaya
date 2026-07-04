@@ -38,3 +38,10 @@ export const ROLE_ALLOWED_STATUSES = {
 
 // All floors present in the hotel
 export const ALL_FLOORS = ['1','2','3','4','5','6','11','12','13','14','15','16','Annexe']
+
+// Seasons configuration for the planning
+export const SEASONS_CONFIG = [
+  { id: 'ETE 2026', label: 'Été 2026', start: new Date(2026, 4, 1), end: new Date(2026, 9, 31) },
+  { id: 'HIVER 2026/27', label: 'Hiver 2026/27', start: new Date(2026, 10, 1), end: new Date(2027, 3, 30) },
+];
+

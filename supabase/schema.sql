@@ -454,3 +454,35 @@ ON CONFLICT (date) DO UPDATE SET
   en_preparation = EXCLUDED.en_preparation,
   maintenance = EXCLUDED.maintenance;
 
+-- ============================================================
+-- TABLE: bookings (Réservations synchronisées)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.bookings (
+  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  room_number TEXT NOT NULL,
+  guest_name  TEXT NOT NULL,
+  check_in    DATE NOT NULL,
+  check_out   DATE NOT NULL,
+  persons     TEXT,
+  notes       TEXT,
+  season      TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT unique_booking_identity UNIQUE (room_number, guest_name, check_in, check_out, season)
+);
+
+ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
+
+-- Tout utilisateur authentifié peut LIRE les réservations
+CREATE POLICY "bookings_select_all" ON public.bookings
+  FOR SELECT USING (auth.role() = 'authenticated');
+
+-- Admin peut TOUT faire (nécessaire pour la synchro)
+CREATE POLICY "bookings_admin_all" ON public.bookings
+  FOR ALL USING (
+    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+  );
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.bookings;
+
+

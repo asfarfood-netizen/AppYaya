@@ -50,9 +50,11 @@ function isRoomCode(value) {
 
 function findWorksheetDateRowIndex(worksheet, range) {
   let best = { index: range.s.r, score: 0 };
-  for (let row = range.s.r; row <= Math.min(range.e.r, range.s.r + 20); row++) {
+  // Scan up to 25 rows for headers
+  for (let row = range.s.r; row <= Math.min(range.e.r, range.s.r + 25); row++) {
     let score = 0;
-    for (let col = range.s.c; col <= range.e.c; col++) {
+    // Scan up to 100 columns for dates
+    for (let col = range.s.c; col <= Math.min(range.e.c, range.s.c + 100); col++) {
       if (parseDayNumber({ v: sheetCellText(worksheet, row, col) })) score += 1;
     }
     if (score > best.score) {
@@ -71,12 +73,12 @@ function buildDateMapFromWorksheet(worksheet, dateRowIndex, range, seasonStart) 
     if (!dayNum) continue;
 
     let guard = 0;
-    while (cursor.getDate() !== dayNum && guard < 40) {
+    while (cursor.getDate() !== dayNum && guard < 45) { // Look ahead slightly more
       cursor = addDaysLocal(cursor, 1);
       guard += 1;
     }
 
-    if (guard < 40) {
+    if (guard < 45) {
       dateMap[col] = new Date(cursor);
       cursor = addDaysLocal(cursor, 1);
     }
@@ -93,12 +95,14 @@ function sameGuestPrefix(activeName, nextName) {
 
 function shouldSkipValue(value) {
   const text = value.trim().toUpperCase();
-  return !text || text === '/' || text === 'C' || text === 'NC' || text === 'RDC' || text === 'X' || text === '-';
+  // Filter out noise
+  const noise = ['/', 'C', 'NC', 'RDC', 'X', '-', 'PAYÉ', 'PAYE', 'OFFERT', 'GRATUIT', 'BLOQUÉ', 'BLOQUE', 'RESERVÉ', 'RESERVE'];
+  return !text || noise.includes(text) || text.length < 2;
 }
 
 function splitTransitionValue(activeBooking, value) {
-  if (!activeBooking || !value.includes(' / ')) return null;
-  const parts = value.split(' / ').map(p => p.trim()).filter(Boolean);
+  if (!activeBooking || (!value.includes(' / ') && !value.includes(' /'))) return null;
+  const parts = value.split(/\s*\/\s*/).map(p => p.trim()).filter(Boolean);
   if (parts.length < 2) return null;
   const nameLeft = parts[0];
   const nameRight = parts.slice(1).join(' / ');
@@ -115,6 +119,7 @@ function finalizeBooking(b, room, season) {
   let checkIn = new Date(b.checkIn);
   let checkOut = new Date(b.checkOut);
 
+  // Arrival/Departure markers extraction
   const arrivalMatch = name.match(/>(\d{1,2})\/(\d{1,2})(\/(\d{2,4}))?/);
   if (arrivalMatch) {
     const d = parseInt(arrivalMatch[1]);
@@ -166,7 +171,13 @@ function finalizeBooking(b, room, season) {
       return '';
   });
 
-  name = name.replace(/\b(TEL|PHONE|WHATSAPP)\b/gi, '').replace(/\s{2,}/g, ' ').replace(/[,;/-]+$/, '').replace(/^[,;/-]+/, '').trim();
+  // Final cleanup of noise
+  name = name
+    .replace(/\b(TEL|PHONE|WHATSAPP|PAY[EÉ]|OFFERT|GRATUIT|BLOQU[EÉ]|RESERV[EÉ])\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/[,;/-]+$/, '')
+    .replace(/^[,;/-]+/, '')
+    .trim();
   const upperName = name.toUpperCase();
   if (!name || name === "/" || upperName === "C" || upperName === "NC" || upperName === "RDC") name = "CLIENT";
 
@@ -189,7 +200,6 @@ async function extractBookingsFromBuffer(buffer, seasonId) {
   const XLSX = await import('https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs');
   const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
 
-  // Scans all sheets for a valid one
   let allBookings = [];
   for (const sheetName of workbook.SheetNames) {
     const worksheet = workbook.Sheets[sheetName];
@@ -261,14 +271,12 @@ export async function syncBookingsFromFiles(files, onProgress) {
   try {
     let allNewData = [];
 
-    // Step 1: Process Summer File
     onProgress(10, "Lecture du fichier Été...");
     const summerBuffer = await files.summer.file.arrayBuffer();
     const summerData = await extractBookingsFromBuffer(summerBuffer, files.summer.seasonId);
     allNewData.push(...summerData);
     onProgress(30, `Extraction Été : ${summerData.length} réservations trouvées.`);
 
-    // Step 2: Process Winter File
     onProgress(40, "Lecture du fichier Hiver...");
     const winterBuffer = await files.winter.file.arrayBuffer();
     const winterData = await extractBookingsFromBuffer(winterBuffer, files.winter.seasonId);
@@ -277,10 +285,10 @@ export async function syncBookingsFromFiles(files, onProgress) {
 
     if (allNewData.length === 0) throw new Error("Aucune donnée trouvée.");
 
-    // Step 3: Database Update
     onProgress(70, "Mise à jour de la base de données...");
     const { data: existingData } = await supabase.from('bookings').select('id, room_number, guest_name, check_in, check_out, season');
 
+    // Deduplicate new data to avoid internal conflicts
     const uniqueMap = new Map();
     for (const b of allNewData) {
       const key = `${b.room_number}|${b.guest_name}|${b.check_in}|${b.check_out}|${b.season}`;
@@ -288,8 +296,15 @@ export async function syncBookingsFromFiles(files, onProgress) {
     }
     const uniqueList = Array.from(uniqueMap.values());
 
-    const { error: upsertError } = await supabase.from('bookings').upsert(uniqueList, { onConflict: 'room_number, guest_name, check_in, check_out, season' });
-    if (upsertError) throw upsertError;
+    // Fix: Use the new unique constraint target
+    const { error: upsertError } = await supabase
+      .from('bookings')
+      .upsert(uniqueList, { onConflict: 'room_number, guest_name, check_in, check_out, season' });
+
+    if (upsertError) {
+       console.error("[Sync] Upsert Error:", upsertError);
+       throw new Error(`Erreur base de données: ${upsertError.message}`);
+    }
 
     onProgress(90, "Nettoyage des anciennes réservations...");
     const newKeys = new Set(uniqueList.map(b => `${b.room_number}|${b.guest_name}|${b.check_in}|${b.check_out}|${b.season}`));
@@ -305,6 +320,7 @@ export async function syncBookingsFromFiles(files, onProgress) {
     localStorage.setItem('last_booking_sync', new Date().toISOString());
     return { added: uniqueList.length, deleted: toDelete.length };
   } catch (error) {
+    console.error("[Sync] Critical failure:", error);
     onProgress(0, `Erreur: ${error.message}`);
     throw error;
   } finally {

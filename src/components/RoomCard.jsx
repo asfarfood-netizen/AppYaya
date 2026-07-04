@@ -44,11 +44,6 @@ export default function RoomCard({ room, onClick, compact = false }) {
     >
       {/* Status dot */}
       <div className="absolute top-3 right-3 flex items-center gap-1.5">
-        {room.manual_status_override && (
-          <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-black uppercase text-amber-300">
-            Manuel
-          </span>
-        )}
         <span className="text-lg">{st.emoji}</span>
       </div>
 
@@ -80,20 +75,6 @@ export default function RoomCard({ room, onClick, compact = false }) {
         <p className="mt-2 text-[11px] text-slate-400 line-clamp-1 italic">
           {room.notes}
         </p>
-      )}
-
-      {/* Guest info from planning */}
-      {room.current_booking && (
-        <div className="mt-3 pt-2 border-t border-white/5">
-          <p className="text-[10px] font-bold text-indigo-400 uppercase truncate">
-            👤 {room.current_booking.guest_name}
-          </p>
-          {room.manual_status_override && (
-            <p className="mt-1 text-[9px] font-bold uppercase text-amber-300/80">
-              Statut planning: occupée
-            </p>
-          )}
-        </div>
       )}
 
       {/* Hover glow */}

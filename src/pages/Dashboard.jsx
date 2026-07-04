@@ -1,29 +1,20 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react'
-import { RefreshCw, Wifi, WifiOff, RotateCcw } from 'lucide-react'
+import React, { useEffect, useState, useCallback } from 'react'
+import { RefreshCw, Wifi, WifiOff } from 'lucide-react'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
 import FilterBar from '../components/FilterBar'
 import StatsBar from '../components/StatsBar'
 import RoomGrid from '../components/RoomGrid'
 import RoomModal from '../components/RoomModal'
-import {
-  applyPlanningStatusToRooms,
-  resetAllRoomsToPlanning,
-  syncAutomaticRoomStatuses
-} from '../services/roomStatusSync'
 
 export default function Dashboard() {
   const { profile } = useAuth()
   const [rooms, setRooms]         = useState([])
   const [tasks, setTasks]         = useState([])
-  const [bookings, setBookings]   = useState([])
   const [loading, setLoading]     = useState(true)
-  const [bookingsLoaded, setBookingsLoaded] = useState(false)
-  const [resetting, setResetting] = useState(false)
   const [connected, setConnected] = useState(true)
   const [selected, setSelected]   = useState(null)
   const [filters, setFilters]     = useState({ search: '', status: 'all', floor: 'all', roomType: 'all' })
-  const lastSync = localStorage.getItem('last_booking_sync')
 
   const fetchRooms = useCallback(async () => {
     const { data, error } = await supabase
@@ -46,22 +37,9 @@ export default function Dashboard() {
     if (data) setTasks(data)
   }, [])
 
-  const fetchCurrentBookings = useCallback(async () => {
-    setBookingsLoaded(false)
-    const todayStr = new Date().toISOString().split('T')[0]
-    const { data } = await supabase
-      .from('bookings')
-      .select('*')
-      .lte('check_in', todayStr)
-      .gt('check_out', todayStr)
-    if (data) setBookings(data)
-    setBookingsLoaded(true)
-  }, [])
-
   useEffect(() => {
     fetchRooms()
     fetchTasks()
-    fetchCurrentBookings()
 
     // Realtime subscriptions
     const roomSub = supabase
@@ -80,56 +58,20 @@ export default function Dashboard() {
       })
       .subscribe()
 
-    const bookingSub = supabase
-      .channel('bookings-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
-        fetchCurrentBookings()
-      })
-      .subscribe()
-
     return () => {
       supabase.removeChannel(roomSub)
       supabase.removeChannel(taskSub)
-      supabase.removeChannel(bookingSub)
     }
-  }, [fetchRooms, fetchTasks, fetchCurrentBookings])
-
-  useEffect(() => {
-    if (loading || !bookingsLoaded || rooms.length === 0) return
-    syncAutomaticRoomStatuses(rooms, bookings)
-      .then((result) => {
-        if (result.updated > 0) fetchRooms()
-      })
-      .catch((error) => {
-        console.warn('[Rooms] Planning status sync skipped:', error)
-      })
-  }, [loading, bookingsLoaded, rooms, bookings, fetchRooms])
-
-  const roomsWithPlanning = useMemo(() => {
-    return applyPlanningStatusToRooms(rooms, bookings)
-  }, [rooms, bookings])
+  }, [fetchRooms, fetchTasks])
 
   // Apply filters
-  const filteredRooms = roomsWithPlanning.filter(r => {
+  const filteredRooms = rooms.filter(r => {
     if (filters.search && !r.number.toLowerCase().includes(filters.search.toLowerCase()) && !r.notes?.toLowerCase().includes(filters.search.toLowerCase())) return false
     if (filters.status !== 'all' && r.status !== filters.status) return false
     if (filters.floor !== 'all' && r.floor !== filters.floor) return false
     if (filters.roomType !== 'all' && r.room_type !== filters.roomType) return false
     return true
   })
-
-  async function handleResetAllRooms() {
-    if (!window.confirm('Réinitialiser tous les statuts selon le planning ? Les changements manuels seront retirés.')) return
-    setResetting(true)
-    try {
-      await resetAllRoomsToPlanning(rooms, bookings)
-      await fetchRooms()
-    } catch (error) {
-      alert('Erreur reset planning: ' + error.message)
-    } finally {
-      setResetting(false)
-    }
-  }
 
   const today = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
@@ -144,13 +86,6 @@ export default function Dashboard() {
           <p className="text-slate-400 text-sm mt-0.5 capitalize">{today}</p>
         </div>
         <div className="flex items-center gap-3">
-          {/* Last sync info */}
-          {lastSync && (
-            <div className="hidden lg:flex flex-col items-end mr-2">
-              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">Dernier Sync</span>
-              <span className="text-xs text-indigo-400 font-medium">{new Date(lastSync).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
-            </div>
-          )}
           {/* Connection indicator */}
           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${
             connected
@@ -162,16 +97,7 @@ export default function Dashboard() {
             {connected && <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full realtime-dot" />}
           </div>
           <button
-            onClick={handleResetAllRooms}
-            disabled={resetting}
-            className="hidden sm:inline-flex items-center gap-2 px-3 py-2 glass-card hover:bg-white/10 rounded-xl transition-colors text-xs font-black uppercase text-slate-300 disabled:opacity-50"
-            title="Réinitialiser toutes les chambres selon le planning"
-          >
-            <RotateCcw size={15} className={resetting ? 'animate-spin' : ''} />
-            Reset planning
-          </button>
-          <button
-            onClick={() => { fetchRooms(); fetchTasks(); fetchCurrentBookings() }}
+            onClick={() => { fetchRooms(); fetchTasks() }}
             className="p-2 glass-card hover:bg-white/10 rounded-xl transition-colors"
             title="Actualiser"
           >
@@ -181,7 +107,7 @@ export default function Dashboard() {
       </div>
 
       {/* Stats */}
-      <StatsBar rooms={roomsWithPlanning} tasks={tasks} />
+      <StatsBar rooms={rooms} tasks={tasks} />
 
       {/* Filters */}
       <FilterBar filters={filters} onChange={setFilters} />
@@ -208,7 +134,6 @@ export default function Dashboard() {
         <RoomModal
           room={selected}
           onClose={() => setSelected(null)}
-          bookings={bookings}
           onUpdated={() => { fetchRooms(); setSelected(null) }}
         />
       )}

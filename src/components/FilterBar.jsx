@@ -1,5 +1,5 @@
 import React from 'react'
-import { Search, SlidersHorizontal, X, Filter, Layers } from 'lucide-react'
+import { Search, SlidersHorizontal, X } from 'lucide-react'
 import { ROOM_STATUS, ALL_FLOORS } from '../constants'
 
 export default function FilterBar({ filters, onChange }) {
@@ -12,65 +12,86 @@ export default function FilterBar({ filters, onChange }) {
   const isFiltered = search || status !== 'all' || floor !== 'all' || roomType !== 'all'
 
   return (
-    <div className="glass-card p-2 rounded-2xl border-white/[0.05] flex flex-col md:flex-row gap-3">
-      {/* Search Field */}
-      <div className="relative flex-1 group">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors" size={18} />
-        <input
-          type="text"
-          placeholder="Rechercher une chambre ou une note..."
-          value={search}
-          onChange={e => onChange({ ...filters, search: e.target.value })}
-          className="w-full bg-[#161b22] border border-white/5 rounded-xl pl-12 pr-4 py-3.5 text-sm text-slate-200 outline-none focus:border-indigo-500/50 transition-all"
-        />
-        {search && (
-          <button onClick={() => onChange({ ...filters, search: '' })} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-500 hover:text-white">
-            <X size={14} />
+    <div className="glass-card p-4 space-y-3">
+      <div className="flex items-center gap-2 mb-1">
+        <SlidersHorizontal size={14} className="text-slate-400" />
+        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Filtres</span>
+        {isFiltered && (
+          <button
+            onClick={reset}
+            className="ml-auto flex items-center gap-1 text-xs text-red-400 hover:text-red-300 transition-colors"
+          >
+            <X size={12} /> Réinitialiser
           </button>
         )}
       </div>
 
-      <div className="flex gap-2">
-        {/* Status Dropdown */}
-        <div className="relative flex-1 md:w-48">
-          <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
-          <select
-            value={status}
-            onChange={e => onChange({ ...filters, status: e.target.value })}
-            className="select-field pl-9 !py-3.5 !text-xs font-bold uppercase tracking-wider"
-          >
-            <option value="all">Tous les Statuts</option>
-            {Object.entries(ROOM_STATUS).map(([k, v]) => (
-              <option key={k} value={k}>{v.label}</option>
-            ))}
-          </select>
+      <div className="flex flex-wrap gap-3">
+        {/* Search */}
+        <div className="relative flex-1 min-w-[160px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+          <input
+            type="text"
+            placeholder="Chercher chambre..."
+            value={search}
+            onChange={e => onChange({ ...filters, search: e.target.value })}
+            className="input-field pl-9 py-2"
+          />
         </div>
 
-        {/* Floor Dropdown */}
-        <div className="relative flex-1 md:w-40">
-          <Layers className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
-          <select
-            value={floor}
-            onChange={e => onChange({ ...filters, floor: e.target.value })}
-            className="select-field pl-9 !py-3.5 !text-xs font-bold uppercase tracking-wider"
-          >
-            <option value="all">Tous les Étages</option>
-            {ALL_FLOORS.map(f => (
-              <option key={f} value={f}>{f === 'Annexe' ? 'Annexe' : `Étage ${f}`}</option>
-            ))}
-          </select>
-        </div>
+        {/* Status filter */}
+        <select
+          value={status}
+          onChange={e => onChange({ ...filters, status: e.target.value })}
+          className="select-field flex-1 min-w-[140px]"
+        >
+          <option value="all">Tous statuts</option>
+          {Object.entries(ROOM_STATUS).map(([key, val]) => (
+            <option key={key} value={key}>{val.emoji} {val.label}</option>
+          ))}
+        </select>
 
-        {/* Reset Button (only shown when filtered) */}
-        {isFiltered && (
+        {/* Floor filter */}
+        <select
+          value={floor}
+          onChange={e => onChange({ ...filters, floor: e.target.value })}
+          className="select-field flex-1 min-w-[120px]"
+        >
+          <option value="all">Tous étages</option>
+          {ALL_FLOORS.map(f => (
+            <option key={f} value={f}>{f === 'Annexe' ? 'Annexe' : `Étage ${f}`}</option>
+          ))}
+        </select>
+
+        {/* Type filter */}
+        <select
+          value={roomType}
+          onChange={e => onChange({ ...filters, roomType: e.target.value })}
+          className="select-field flex-1 min-w-[120px]"
+        >
+          <option value="all">Tous types</option>
+          <option value="Standard">🛏️ Standard</option>
+          <option value="Grand">🛏️✨ Grand</option>
+          <option value="Appartement">🏠 Appartement</option>
+        </select>
+      </div>
+
+      {/* Quick status buttons */}
+      <div className="flex flex-wrap gap-2 pt-1">
+        {Object.entries(ROOM_STATUS).map(([key, val]) => (
           <button
-            onClick={reset}
-            className="p-3.5 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl hover:bg-red-500/20 transition-all"
-            title="Réinitialiser les filtres"
+            key={key}
+            onClick={() => onChange({ ...filters, status: status === key ? 'all' : key })}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-150 ${
+              status === key
+                ? 'bg-white/15 border-white/30 text-white scale-105'
+                : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
+            }`}
           >
-            <X size={18} />
+            <span>{val.emoji}</span>
+            <span>{val.label}</span>
           </button>
-        )}
+        ))}
       </div>
     </div>
   )

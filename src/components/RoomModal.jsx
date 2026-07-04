@@ -1,13 +1,12 @@
 import React, { useState } from 'react'
-import { X, Save, AlertTriangle, Wrench, Sparkles, RotateCcw } from 'lucide-react'
+import { X, Save, AlertTriangle, Wrench, Sparkles } from 'lucide-react'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
 import { ROOM_STATUS, ROLE_ALLOWED_STATUSES } from '../constants'
-import { getPlanningStatusForRoom, resetRoomToPlanning } from '../services/roomStatusSync'
 
 const SPECIAL_FLAGS = ['VIP', 'Late Check-out', 'Early Check-in', 'NPC', 'sb']
 
-export default function RoomModal({ room, onClose, onUpdated, bookings = [] }) {
+export default function RoomModal({ room, onClose, onUpdated }) {
   const { profile } = useAuth()
   const [status, setStatus]         = useState(room.status)
   const [specialFlag, setSpecialFlag] = useState(room.special_flag || '')
@@ -17,8 +16,6 @@ export default function RoomModal({ room, onClose, onUpdated, bookings = [] }) {
 
   const allowedStatuses = ROLE_ALLOWED_STATUSES[profile?.role] || []
   const canEdit = allowedStatuses.length > 0
-  const planning = getPlanningStatusForRoom(room, bookings)
-  const planningStatus = ROOM_STATUS[planning.status]
 
   async function handleSave() {
     if (!canEdit) return
@@ -29,7 +26,6 @@ export default function RoomModal({ room, onClose, onUpdated, bookings = [] }) {
         .from('rooms')
         .update({
           status,
-          manual_status_override: true,
           special_flag: specialFlag || null,
           notes,
           updated_by: profile.id,
@@ -46,68 +42,39 @@ export default function RoomModal({ room, onClose, onUpdated, bookings = [] }) {
     }
   }
 
-  async function handleResetToPlanning() {
-    setSaving(true)
-    setError(null)
-    try {
-      await resetRoomToPlanning(room, bookings)
-      onUpdated()
-      onClose()
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
   const current = ROOM_STATUS[room.status]
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box !max-w-xl">
+      <div className="modal-box">
         {/* Header */}
-        <div className="flex items-start justify-between mb-8">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-indigo-600/20 border border-indigo-500/20 flex items-center justify-center text-2xl font-black text-white">
-              {room.number}
+        <div className="flex items-start justify-between mb-6">
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <h2 className="text-2xl font-extrabold text-white">Chambre {room.number}</h2>
+              {room.special_flag && (
+                <span className="px-2 py-0.5 bg-purple-500/30 text-purple-300 text-xs font-bold rounded-md border border-purple-500/40">
+                  {room.special_flag}
+                </span>
+              )}
             </div>
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <h2 className="text-2xl font-black text-white uppercase tracking-tight">Détails Chambre</h2>
-                {room.special_flag && (
-                  <span className="px-2 py-0.5 bg-purple-500/30 text-purple-300 text-[10px] font-black rounded-md border border-purple-500/40 uppercase">
-                    {room.special_flag}
-                  </span>
-                )}
-              </div>
-              <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">{room.room_type} · Étage {room.floor}</p>
-            </div>
+            <p className="text-slate-400 text-sm">{room.room_type} · Étage {room.floor}</p>
           </div>
-          <button onClick={onClose} className="p-2.5 hover:bg-white/5 rounded-xl transition-colors text-slate-500 hover:text-white">
-            <X size={20} />
+          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
+            <X size={18} className="text-slate-400" />
           </button>
         </div>
 
         {/* Current status display */}
         <div
-          className="flex items-center gap-4 p-5 rounded-2xl mb-8 border-l-4"
-          style={{ borderColor: current?.color, background: current?.color + '08' }}
+          className="flex items-center gap-3 p-3 rounded-xl mb-5 border"
+          style={{ borderColor: current?.color + '40', background: current?.color + '15' }}
         >
-          <span className="text-3xl">{current?.emoji}</span>
-          <div className="flex-1">
-            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-0.5">Statut actuel</p>
-            <p className="text-lg font-black text-white uppercase">{current?.label}</p>
-            <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-              Planning: <span className="text-cyan-300">{planningStatus?.label}</span>
-              {room.manual_status_override && <span className="ml-2 text-amber-300">Mode manuel</span>}
-            </p>
+          <span className="text-2xl">{current?.emoji}</span>
+          <div>
+            <p className="text-xs text-slate-400 font-medium">Statut actuel</p>
+            <p className="font-bold text-white">{current?.label}</p>
           </div>
-          {room.current_booking && (
-             <div className="text-right">
-                <p className="text-[10px] text-indigo-400 font-bold uppercase mb-0.5">Client Actuel</p>
-                <p className="text-sm font-black text-white">{room.current_booking.guest_name}</p>
-             </div>
-          )}
         </div>
 
         {canEdit ? (
@@ -180,16 +147,7 @@ export default function RoomModal({ room, onClose, onUpdated, bookings = [] }) {
             )}
 
             {/* Actions */}
-            <div className="grid grid-cols-1 gap-3 pt-2 sm:grid-cols-3">
-              <button
-                onClick={handleResetToPlanning}
-                disabled={saving}
-                className="btn-secondary !px-3"
-                title="Reprendre le statut depuis le planning"
-              >
-                <RotateCcw size={14} />
-                Planning
-              </button>
+            <div className="flex gap-3 pt-2">
               <button onClick={onClose} className="btn-secondary flex-1">Annuler</button>
               <button onClick={handleSave} disabled={saving} className="btn-primary flex-1">
                 <Save size={14} />
